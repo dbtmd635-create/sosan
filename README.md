@@ -1,2 +1,2 @@
-# sosan
+# sosang
 캡스톤
