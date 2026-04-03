@@ -22,6 +22,7 @@ import { Community } from "./components/Community";
 import { DxTools } from "./components/DxTools";
 import { MarketPrice } from "./components/MarketPrice";
 import { Marketplace } from "./components/Marketplace";
+import { ChatPage } from "./components/ChatPage";
 
 export const router = createBrowserRouter([
   // 1. 인트로 및 온보딩 (헤더 없음)
@@ -59,6 +60,7 @@ export const router = createBrowserRouter([
       { path: "community", Component: Community },
       { path: "tools", Component: DxTools },
       { path: "trade", Component: Marketplace },
+      { path: "chat", Component: ChatPage },
     ],
   },
 ]);

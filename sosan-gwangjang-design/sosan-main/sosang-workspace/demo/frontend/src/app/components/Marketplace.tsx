@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router";
 import {
   Search,
   MapPin,
@@ -145,13 +146,12 @@ const groupBuyItems = [
 ];
 
 export function Marketplace() {
+  const navigate = useNavigate();
   const [tab, setTab] = useState("trade");
   const [selectedCategory, setSelectedCategory] = useState("전체");
   const [searchQuery, setSearchQuery] = useState("");
   const [favorites, setFavorites] = useState<Set<number>>(new Set([1, 3]));
   const [showPost, setShowPost] = useState(false);
-  const [chatOpen, setChatOpen] = useState<number | null>(null);
-  const [chatMessage, setChatMessage] = useState("");
 
   const filteredItems = mockItems.filter((item) => {
     const matchCat = selectedCategory === "전체" || item.category === selectedCategory;
@@ -317,31 +317,14 @@ export function Marketplace() {
                     </div>
                   </div>
                   <div className="flex gap-2 mt-3">
-                    <Button className="flex-1 bg-primary text-white rounded-lg" style={{ fontSize: '0.825rem' }}
-                      onClick={() => setChatOpen(chatOpen === item.id ? null : item.id)}>
+                    <Button
+                      className="flex-1 bg-primary text-white rounded-lg"
+                      style={{ fontSize: '0.825rem' }}
+                      onClick={() => navigate("/chat", { state: { sellerName: item.seller, itemTitle: item.title } })}
+                    >
                       <MessageCircle className="w-4 h-4 mr-1" /> 채팅하기
                     </Button>
                   </div>
-                  {/* Chat simulation */}
-                  {chatOpen === item.id && (
-                    <div className="mt-3 border border-white/10 rounded-lg p-3 bg-white/5">
-                      <div className="space-y-2 mb-3 max-h-32 overflow-y-auto">
-                        <div className="bg-white/10 rounded-lg p-2" style={{ fontSize: '0.8rem' }}>
-                          <span className="text-primary" style={{ fontWeight: 600 }}>{item.seller}</span>: <span className="text-gray-300">안녕하세요! 궁금한 점 물어보세요 😊</span>
-                        </div>
-                      </div>
-                      <div className="flex gap-2">
-                        <Input
-                            placeholder="메시지 입력..."
-                            className="bg-white/5 border-white/10 text-white placeholder:text-gray-500 flex-1"
-                            value={chatMessage}
-                            onChange={(e) => setChatMessage(e.target.value)}
-                            style={{ fontSize: '0.8rem' }}
-                        />
-                        <Button size="sm" className="bg-primary text-white rounded-lg" onClick={() => setChatMessage("")}>전송</Button>
-                      </div>
-                    </div>
-                  )}
                 </CardContent>
               </Card>
             ))}
@@ -427,9 +410,19 @@ export function Marketplace() {
                       )}
                     </div>
                   </div>
-                  <Button className="bg-green-600 hover:bg-green-700 text-white rounded-lg shrink-0" style={{ fontSize: '0.825rem' }}>
-                    받겠습니다
-                  </Button>
+                  <div className="flex flex-col gap-2 shrink-0">
+                    <Button className="bg-green-600 hover:bg-green-700 text-white rounded-lg" style={{ fontSize: '0.825rem' }}>
+                      받겠습니다
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="border-white/10 text-gray-300 hover:bg-white/5 rounded-lg"
+                      style={{ fontSize: '0.825rem' }}
+                      onClick={() => navigate("/chat", { state: { sellerName: item.donor, itemTitle: item.title } })}
+                    >
+                      <MessageCircle className="w-4 h-4 mr-1" /> 채팅
+                    </Button>
+                  </div>
                 </div>
               </CardContent>
             </Card>
