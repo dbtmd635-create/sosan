@@ -1,0 +1,20 @@
+/* index.css */
+
+/* 🚨 핵심: tailwind.css가 아니라 "tailwindcss"를 불러와야 해 */
+@import "tailwindcss";
+
+/* 아래 파일들도 없다고 에러 나면 주석 처리( 앞에 // ) 해버려 */
+/* @import "theme.css"; */
+/* @import "fonts.css"; */
+
+html, body {
+  background-color: #141720 !important; /* 프로젝트 테마색으로 배경 고정 */
+  margin: 0;
+  padding: 0;
+  color: white;
+}
+
+#root {
+  background-color: #141720;
+  min-height: 100vh;
+}
