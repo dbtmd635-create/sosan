@@ -1,13 +1,49 @@
 import { useState, useEffect, useMemo } from "react";
 import { Link } from "react-router";
-import { Store, ChevronLeft, Sparkles, TrendingUp, Megaphone, Users, Star, BadgeDollarSign, Settings2, FileUp, Keyboard } from "lucide-react";
+import { Store, ChevronLeft, Sparkles, TrendingUp, Megaphone, Users, Star, BadgeDollarSign, Settings2, FileUp, Keyboard, AlertTriangle } from "lucide-react";
 import { NewResultReport } from "./NewResultReport";
 import { ExistingResultReport } from "./ExistingResultReport";
 import { DetailedStartupQuestionnaire } from "./DetailedStartupQuestionnaire";
+import { SimpleResultReport } from "./SimpleResultReport";
 
 /* ─────────────────────────────────────────
    데이터 정의
 ───────────────────────────────────────── */
+const Q_WORK_ENV = [
+    "손님들과 직접 대화하고 소통하며 생동감 있게 일하기 (접객 중심)",
+    "대면은 적더라도 기술적인 완성도나 제품의 질에 집중하기 (제조/기술 중심)",
+    "매장 시스템이 원활하게 돌아가도록 관리하고 유지하기 (운영/관리 중심)",
+    "온라인 환경에서 비대면으로 소통하며 업무 처리하기 (온라인 중심)",
+];
+
+const Q_TIME_ENERGY = [
+    "하루 12시간 이상 상주하며 모든 것을 직접 챙길 수 있습니다. (풀타임 올인)",
+    "표준 근로 시간(8~10시간) 내에서 규칙적으로 일하고 싶습니다. (안정적 운영)",
+    "본업이나 다른 일정이 있어 하루 몇 시간만 관리하고 싶습니다. (반자동/투잡)",
+    "가끔씩 방문하여 점검하는 무인 형태를 희망합니다. (시스템 운영)",
+];
+
+const Q_BUDGET = [
+    "3,000만 원 이하 (소자본/무점포 가능)",
+    "3,000만 원 ~ 7,000만 원 (소규모 매장)",
+    "7,000만 원 ~ 1억 5,000만 원 (일반적인 프랜차이즈/개인 매장)",
+    "1억 5,000만 원 이상 (대형 매장/핵심 상권)",
+];
+
+const Q_PRIORITY = [
+    "수익이 조금 적더라도 실패 확률이 낮은 검증된 아이템 (프랜차이즈/생필품)",
+    "경쟁은 치열해도 내 브랜드만의 개성과 높은 수익을 목표 (개인 브랜드/트렌드 아이템)",
+    "유행을 타지 않고 오랫동안 꾸준하게 운영 가능한 업종 (스테디셀러)",
+];
+
+const Q_AVOID = [
+    "새벽이나 이른 아침 출근",
+    "대면 스트레스 및 감정 노동",
+    "뜨거운 불 앞이나 고된 육체 노동",
+    "복잡한 식자재 발주 및 유통기한 관리",
+    "필수적인 SNS 소통 및 트렌드 쫓기",
+];
+
 const BUSINESS_TYPES = [
     "음식점 (한식/양식/중식 등)",
     "카페/음료",
@@ -247,7 +283,6 @@ const PAGE_BG: React.CSSProperties = {
     fontFamily: "'Noto Sans KR', sans-serif",
 };
 
-
 /* ─────────────────────────────────────────
    공통 헤더
 ───────────────────────────────────────── */
@@ -357,7 +392,6 @@ function QuestionStep({
             <TopBar onBack={onBack} />
             <ProgressBar current={step} total={total} />
 
-            {/* AI badge */}
             <div className="inline-flex items-center gap-2 px-3.5 py-2 rounded-full mb-7"
                  style={{ background: "rgba(16,185,129,0.15)", border: "1px solid rgba(16,185,129,0.35)", fontSize: "0.8rem", fontWeight: 600, color: "#34d399" }}>
                 <Sparkles style={{ width: "14px", height: "14px" }} />
@@ -399,7 +433,7 @@ function QuestionStep({
 }
 
 /* ─────────────────────────────────────────
-   주소 입력 스텝 (Daum Postcode API)
+   주소 입력 스텝
 ───────────────────────────────────────── */
 interface AddressValue {
     zonecode: string;
@@ -537,7 +571,6 @@ function AddressStep({
     );
 }
 
-
 /* ─────────────────────────────────────────
    로딩 화면
 ───────────────────────────────────────── */
@@ -572,12 +605,12 @@ function LoadingScreen() {
 }
 
 /* ─────────────────────────────────────────
-   원형 게이지 (SVG)
+   원형 게이지 (SVG) & Flow State
 ───────────────────────────────────────── */
-
 type FlowState =
     | "analysisModeSelect"
     | "typeSelect"
+    | "warningNew"
     | "existingNotice"
     | "exCategorySelect"
     | "existingQuestions"
@@ -586,13 +619,13 @@ type FlowState =
     | "deepQuestions"
     | "q0new"
     | "detailedNew"
-    | "q1" | "q2" | "q3" | "q4"
+    | "q1" | "q2" | "q3" | "q4" | "q5"
     | "q1ex" | "q2ex" | "q3ex" | "q4ex" | "q5ex" | "q6ex" | "q7ex" | "q8ex" | "q9ex"
     | "q10ex" | "q11ex" | "q12ex" | "q13ex" | "q14ex" | "q15ex" | "q16ex" | "q17ex"
     | "loading"
     | "result";
 
-type ChoiceFlowState = Exclude<FlowState, "analysisModeSelect" | "typeSelect" | "existingNotice" | "exCategorySelect" | "existingQuestions" | "deepPosInput" | "deepCategorySelect" | "deepQuestions" | "q0new" | "detailedNew" | "q2ex" | "loading" | "result">;
+type ChoiceFlowState = Exclude<FlowState, "analysisModeSelect" | "typeSelect" | "warningNew" | "existingNotice" | "exCategorySelect" | "existingQuestions" | "deepPosInput" | "deepCategorySelect" | "deepQuestions" | "q0new" | "detailedNew" | "q2ex" | "loading" | "result">;
 
 const QUESTION_FLOW_CONFIG: Record<ChoiceFlowState, {
     step: number;
@@ -604,39 +637,48 @@ const QUESTION_FLOW_CONFIG: Record<ChoiceFlowState, {
     next: FlowState;
 }> = {
     q1: {
-        step: 2,
+        step: 1,
         total: 5,
-        question: "어떤 업종을 고려하고 계신가요?",
-        options: BUSINESS_TYPES,
-        answerKey: "bizType",
+        question: "가장 에너지를 얻는 업무 환경은 어떤 모습인가요?",
+        options: Q_WORK_ENV,
+        answerKey: "workEnv",
         back: "q0new",
         next: "q2",
     },
     q2: {
-        step: 3,
+        step: 2,
         total: 5,
-        question: "어느 지역에서 창업을 준비 중이신가요?",
-        options: REGIONS,
-        answerKey: "region",
+        question: "현실적으로 매장 운영에 쏟을 수 있는 시간과 체력은 어느 정도인가요?",
+        options: Q_TIME_ENERGY,
+        answerKey: "timeEnergy",
         back: "q1",
         next: "q3",
     },
     q3: {
-        step: 4,
+        step: 3,
         total: 5,
-        question: "가장 주력으로 생각하는 고객층은 누구인가요?",
-        options: TARGET_CUSTOMERS_NEW,
-        answerKey: "target",
+        question: "준비하신 초기 투자금(보증금, 권리금, 인테리어 등 포함)의 최대치는 얼마인가요?",
+        options: Q_BUDGET,
+        answerKey: "budget",
         back: "q2",
         next: "q4",
     },
     q4: {
+        step: 4,
+        total: 5,
+        question: "사업의 수익성과 안정성 중 어디에 더 무게를 두고 싶으신가요?",
+        options: Q_PRIORITY,
+        answerKey: "priority",
+        back: "q3",
+        next: "q5",
+    },
+    q5: {
         step: 5,
         total: 5,
-        question: "예상하시는 1인당 평균 결제 금액은 얼마인가요?",
-        options: AVG_PAYMENT,
-        answerKey: "avgPayment",
-        back: "q3",
+        question: "창업을 하더라도, 이것만큼은 절대 피하고 싶은 상황은 무엇인가요?",
+        options: Q_AVOID,
+        answerKey: "avoid",
+        back: "q4",
         next: "loading",
     },
     q1ex: {
@@ -1111,7 +1153,8 @@ const DEEP_CATEGORY_QUESTION_MAP: Record<string, ExistingQuestion[]> = {
 };
 
 export function AIAnalysisPage() {
-    const [flow, setFlow]       = useState<FlowState>("typeSelect");
+    const [flow, setFlow] = useState<FlowState>("typeSelect");
+    const [userPath, setUserPath] = useState<"simpleNew" | "detailedNew" | "existing">("simpleNew");
     const [analysisMode, setAnalysisMode] = useState<AnalysisMode>("light");
     const [userType, setUserType] = useState<"new" | "existing">("new");
     const [answers, setAnswers] = useState<Record<string, string | string[]>>({});
@@ -1185,6 +1228,7 @@ export function AIAnalysisPage() {
 
     const ans = (key: string): string => (answers[key] as string) || "";
     const set = (key: string, val: string) => setAnswers((prev) => ({ ...prev, [key]: val }));
+
     const resetAnswers = () => {
         setAnswers({});
         setAddrQ2ex(INITIAL_ADDRESS);
@@ -1197,13 +1241,16 @@ export function AIAnalysisPage() {
         setPosInputError("");
         setCsvError("");
     };
+
     const startFlow = (type: "new" | "existing") => {
         resetAnswers();
         setUserType(type);
         if (type === "new") {
-            setFlow("q0new");
+            setUserPath("simpleNew");
+            setFlow("warningNew");
             return;
         }
+        setUserPath("existing");
         setFlow("analysisModeSelect");
     };
 
@@ -1341,10 +1388,15 @@ export function AIAnalysisPage() {
     const handleReset = () => {
         resetAnswers();
         setUserType("new");
+        setUserPath("simpleNew");
         setAnalysisMode("light");
         setFlow("typeSelect");
     };
-    const handleSwitchToExisting = () => startFlow("existing");
+    const handleSwitchToExisting = () => {
+        setUserPath("existing");
+        startFlow("existing");
+    };
+
     if (flow === "result" && userType === "existing")
         return (
             <ExistingResultReport
@@ -1352,11 +1404,13 @@ export function AIAnalysisPage() {
                 onReset={handleReset}
             />
         );
+    if (flow === "result" && userPath === "simpleNew")
+        return <SimpleResultReport answers={answers} onReset={handleReset} onDetailedAnalysis={() => { setUserPath("detailedNew"); setFlow("detailedNew"); }} />;
     if (flow === "result")
         return <NewResultReport answers={answers} onReset={handleReset} onSwitchToExisting={handleSwitchToExisting} />;
 
-    /* ── 설문 스텝 (신생 창업자) ── */
-    if (flow === "q0new") return (
+    /* ── 창업 전 주의사항 (신생 창업자 진입) ── */
+    if (flow === "warningNew") return (
         <div style={PAGE_BG}>
             <div className="min-h-screen flex flex-col items-center justify-start pt-24 px-4">
                 <div className="w-full max-w-xl">
@@ -1365,8 +1419,54 @@ export function AIAnalysisPage() {
                             <ChevronLeft className="w-4 h-4" /> 이전
                         </button>
                     </div>
+                    <div className="flex items-center gap-3 mb-10">
+                        <div className="w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0"
+                             style={{ background: "linear-gradient(135deg,#f97316,#fb923c)", boxShadow: "0 6px 20px rgba(249,115,22,0.4)" }}>
+                            <Store className="w-6 h-6 text-white" />
+                        </div>
+                        <div className="flex flex-col">
+                            <span className="text-xl font-black text-white leading-tight tracking-tight">소상광장</span>
+                            <span className="text-xs font-semibold" style={{ color: "rgba(255,255,255,0.4)" }}>AI 맞춤 분석</span>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-2 mb-6">
+                        <AlertTriangle className="w-5 h-5 flex-shrink-0" style={{ color: "#f97316" }} />
+                        <h2 className="text-xl font-black text-white">잠깐! 창업 전 꼭 체크해 보세요.</h2>
+                    </div>
+                    <div className="rounded-2xl p-6 mb-8" style={{ background: "rgba(249,115,22,0.08)", border: "1px solid rgba(249,115,22,0.25)" }}>
+                        <p style={{ fontSize: "0.97rem", color: "rgba(255,255,255,0.75)", lineHeight: 1.85 }}>
+                            소상공인 창업 후,{" "}
+                            <span style={{ color: "#fb923c", fontWeight: 700 }}>초기 자금이 바닥나는 3~6개월 구간</span>과{" "}
+                            <span style={{ color: "#fb923c", fontWeight: 700 }}>매출이 고정비를 못 넘기는 1~3년 구간</span>은
+                            수익보다 지출이 많을 수 있습니다.
+                            <br /><br />
+                            이 <span style={{ color: "#fb923c", fontWeight: 700 }}>'데스밸리'</span> 구간을 버틸
+                            마음의 준비와 여유 운영 자금이 계획되어 있으신가요?
+                        </p>
+                    </div>
+                    <button
+                        onClick={() => setFlow("q0new")}
+                        className="w-full h-14 rounded-2xl font-bold text-white transition-all"
+                        style={{ background: "linear-gradient(135deg,#10b981,#34d399)", boxShadow: "0 8px 28px rgba(16,185,129,0.4)" }}
+                    >
+                        확인했습니다
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
 
-                    {/* 브랜드 */}
+    /* ── 설문 스텝 (신생 창업자) ── */
+    if (flow === "q0new") return (
+        <div style={PAGE_BG}>
+            <div className="min-h-screen flex flex-col items-center justify-start pt-24 px-4">
+                <div className="w-full max-w-xl">
+                    <div className="flex items-center mb-12">
+                        <button onClick={() => setFlow("warningNew")} className="flex items-center gap-1 text-sm font-medium" style={{ color: "rgba(255,255,255,0.4)" }}>
+                            <ChevronLeft className="w-4 h-4" /> 이전
+                        </button>
+                    </div>
+
                     <div className="flex items-center gap-3 mb-10">
                         <div className="w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0"
                              style={{ background: "linear-gradient(135deg,#f97316,#fb923c)", boxShadow: "0 6px 20px rgba(249,115,22,0.4)" }}>
@@ -1382,7 +1482,7 @@ export function AIAnalysisPage() {
                     <div className="grid grid-cols-2 gap-4">
                         {[
                             { label: "예", value: "예", desc: "업종·위치 등 어느 정도 구체적인 계획이 있어요" },
-                            { label: "아니오", value: "아니오", desc: "아직 막연하게 창업을 고려 중이에요" },
+                            { label: "아니오", value: "아니오", desc: "아직 막막해도 괜찮아요! AI와 함께 나만의 업종을 찾아보세요." },
                         ].map((opt) => {
                             const selected = ans("hasPlan") === opt.value;
                             return (
@@ -1403,7 +1503,11 @@ export function AIAnalysisPage() {
                     </div>
                     <button
                         disabled={!ans("hasPlan")}
-                        onClick={() => setFlow(ans("hasPlan") === "예" ? "detailedNew" : "q1")}
+                        onClick={() => {
+                            const path = ans("hasPlan") === "예" ? "detailedNew" : "simpleNew";
+                            setUserPath(path);
+                            setFlow(ans("hasPlan") === "예" ? "detailedNew" : "q1");
+                        }}
                         className="mt-8 w-full h-14 rounded-2xl font-bold text-white transition-all"
                         style={{
                             background: ans("hasPlan") ? "linear-gradient(135deg,#10b981,#34d399)" : "rgba(255,255,255,0.08)",
@@ -2038,7 +2142,6 @@ export function AIAnalysisPage() {
                             ),
                             title: "신생 창업자",
                             desc: "처음 가게를 시작하려고 준비 중입니다. 업종, 위치, 비용 등 전반적인 가이드가 필요해요.",
-                            nextFlow: "q0new" as FlowState,
                         },
                         {
                             key: "existing" as const,
@@ -2050,7 +2153,6 @@ export function AIAnalysisPage() {
                             ),
                             title: "기존 사장님",
                             desc: "이미 가게를 운영 중입니다. 매출 상승, 마케팅, 트렌드 분석 등 운영 전략이 필요해요.",
-                            nextFlow: "q1ex" as FlowState,
                         },
                     ].map((card) => {
                         return (
