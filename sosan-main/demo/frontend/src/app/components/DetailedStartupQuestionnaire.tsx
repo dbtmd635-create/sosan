@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { ChevronLeft, Sparkles, ChevronDown } from "lucide-react";
 import sigunguData from "./sigungu.json";
+import question1Data from "./Question1.json";
 
 /* ── 스타일 상수 ── */
 const PAGE_BG: React.CSSProperties = {
@@ -29,29 +30,19 @@ const QUESTIONS = [
   {
     key: "bizType",
     category: "업종",
-    question: "어떤 업종을 생각하고 계신가요?",
-    options: [
-      "음식점",
-      "카페",
-      "디저트",
-      "배달전문",
-      "소매/판매",
-      "서비스업",
-      "온라인 판매",
-      "아직 고민 중이에요",
-    ],
+    question: "",
+    options: [],
     multi: false,
-    type: "choice",
+    type: "bizTypeSelect",
   },
   {
     key: "opType",
     category: "운영 형태",
     question: "어떤 방식으로 운영하고 싶으신가요?",
     options: [
-      "오프라인 매장",
+      "매장전문",
       "배달전문",
       "포장전문",
-      "온라인 중심",
       "매장+배달 혼합형",
       "아직 미정이에요",
     ],
@@ -157,7 +148,7 @@ const QUESTIONS = [
       "점심 중심",
       "저녁 중심",
       "야간 중심",
-      "종일 운영",
+      "24시간 운영",
       "아직 미정이에요",
     ],
     multi: false,
@@ -253,10 +244,18 @@ interface Props {
   onComplete: (answers: Record<string, string | string[]>) => void;
 }
 
+const Q1 = question1Data as Record<string, { question: string; options: string[] }>;
+
 export function DetailedStartupQuestionnaire({ onBack, onComplete }: Props) {
   const [step, setStep] = useState(0);
   const [answers, setAnswers] = useState<Record<string, string | string[]>>({});
   const [address, setAddress] = useState<AddressValue>({ sido: "", sigungu: "" });
+
+  // 업종 2단계 선택 상태
+  const [bizStep, setBizStep] = useState<0 | 1>(0);          // 0: 대분류, 1: 세부분류
+  const [bizCategory, setBizCategory] = useState("");         // 식당/카페/주점/배달전문점/기타
+  const [bizCustom, setBizCustom] = useState("");             // 기타 직접입력
+  const [bizSubCustom, setBizSubCustom] = useState("");       // 세부 기타 직접입력
 
   const q = QUESTIONS[step];
   const stepNum = step + 1;
@@ -269,10 +268,61 @@ export function DetailedStartupQuestionnaire({ onBack, onComplete }: Props) {
     setVal(key, next);
   };
 
+  // 업종 선택 완료 여부
+  const isBizValid = () => {
+    if (bizStep === 0) {
+      if (!bizCategory) return false;
+      if (bizCategory === "기타") return bizCustom.trim().length > 0;
+      return true;
+    }
+    // bizStep === 1
+    const sub = answers["bizSubType"] as string;
+    if (!sub) return false;
+    const isSubEtc = sub === "기타" || sub.startsWith("기타");
+    if (isSubEtc) return bizSubCustom.trim().length > 0;
+    return true;
+  };
+
   const isValid = () => {
+    if (q.type === "bizTypeSelect") return isBizValid();
     if (q.type === "address") return !!address.sido;
     if (q.multi) return ((answers[q.key] as string[]) ?? []).length > 0;
     return !!(answers[q.key] as string);
+  };
+
+  // 업종 다음 버튼
+  const handleBizNext = () => {
+    if (bizStep === 0) {
+      if (bizCategory === "기타") {
+        setVal("bizType", bizCustom.trim());
+        setStep(s => s + 1);
+        return;
+      }
+      // 세부 질문이 있는 경우
+      if (Q1[bizCategory]) {
+        setBizStep(1);
+      } else {
+        setVal("bizType", bizCategory);
+        setStep(s => s + 1);
+      }
+    } else {
+      // bizStep === 1
+      const sub = answers["bizSubType"] as string;
+      const isSubEtc = sub === "기타" || sub.startsWith("기타");
+      const finalSub = isSubEtc ? bizSubCustom.trim() : sub;
+      setVal("bizType", `${bizCategory} > ${finalSub}`);
+      setStep(s => s + 1);
+    }
+  };
+
+  const handleBizBack = () => {
+    if (bizStep === 1) {
+      setBizStep(0);
+      setVal("bizSubType", "");
+      setBizSubCustom("");
+    } else {
+      setStep(s => s - 1);
+    }
   };
 
   const handleNext = () => {
@@ -290,6 +340,104 @@ export function DetailedStartupQuestionnaire({ onBack, onComplete }: Props) {
     if (step === 0) onBack();
     else setStep(s => s - 1);
   };
+
+  // 업종 2단계 선택 전용 렌더
+  if (q.type === "bizTypeSelect") {
+    const rootQ = Q1["root"];
+    const subQ = bizStep === 1 ? Q1[bizCategory] : null;
+    const currentQ = subQ ?? rootQ;
+    const isEtcSelected = bizStep === 0 ? bizCategory === "기타" : (answers["bizSubType"] as string)?.startsWith("기타") || answers["bizSubType"] === "기타";
+
+    return (
+      <div style={PAGE_BG}>
+        <div style={{ maxWidth: 640, margin: "0 auto", padding: "32px 20px" }}>
+          <div className="flex items-center justify-between mb-6">
+            <button
+              onClick={bizStep === 1 ? handleBizBack : handleBack}
+              className="flex items-center gap-1.5 transition-all"
+              style={{ background: "none", border: "none", cursor: "pointer", color: "rgba(255,255,255,0.35)", fontSize: "0.88rem" }}
+              onMouseEnter={e => (e.currentTarget.style.color = "rgba(255,255,255,0.7)")}
+              onMouseLeave={e => (e.currentTarget.style.color = "rgba(255,255,255,0.35)")}
+            >
+              <ChevronLeft style={{ width: 16, height: 16 }} /> 이전으로
+            </button>
+            <span style={{ fontSize: "0.8rem", color: "rgba(255,255,255,0.25)" }}>{stepNum} / {TOTAL}</span>
+          </div>
+          <div className="mb-10">
+            <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.07)" }}>
+              <div className="h-full rounded-full transition-all duration-500" style={{ width: `${(stepNum / TOTAL) * 100}%`, background: "linear-gradient(90deg,#10b981,#34d399)" }} />
+            </div>
+          </div>
+          <div className="inline-flex items-center gap-2 px-3.5 py-2 rounded-full mb-4" style={{ background: "rgba(16,185,129,0.15)", border: "1px solid rgba(16,185,129,0.35)", fontSize: "0.8rem", fontWeight: 600, color: "#34d399" }}>
+            <Sparkles style={{ width: 14, height: 14 }} /> AI 어시스턴트의 질문
+          </div>
+          <p style={{ fontSize: "0.78rem", color: "rgba(255,255,255,0.3)", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "8px" }}>업종</p>
+          <h2 className="mb-8" style={{ fontSize: "clamp(1.4rem, 3.5vw, 2rem)", fontWeight: 800, letterSpacing: "-0.03em", lineHeight: 1.3 }}>
+            {currentQ.question}
+          </h2>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+            {currentQ.options.map(opt => {
+              const isSelected = bizStep === 0 ? bizCategory === opt : answers["bizSubType"] === opt;
+              const isEtcOpt = opt === "기타" || opt.startsWith("기타");
+              return (
+                <button
+                  key={opt}
+                  onClick={() => {
+                    if (bizStep === 0) { setBizCategory(opt); setBizCustom(""); }
+                    else { setVal("bizSubType", opt); setBizSubCustom(""); }
+                  }}
+                  className="w-full text-left transition-all active:scale-[0.98]"
+                  style={{
+                    padding: "16px 20px", borderRadius: "14px",
+                    border: isSelected ? "1.5px solid #10b981" : "1px solid rgba(255,255,255,0.1)",
+                    background: isSelected ? "rgba(16,185,129,0.12)" : "rgba(255,255,255,0.04)",
+                    color: isSelected ? "#34d399" : "rgba(255,255,255,0.65)",
+                    fontSize: "0.95rem", fontWeight: isSelected ? 600 : 400, cursor: "pointer",
+                    boxShadow: isSelected ? "0 0 0 1px rgba(16,185,129,0.3)" : "none",
+                  }}
+                >
+                  {opt}{isEtcOpt ? " (직접 입력)" : ""}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* 기타 직접 입력 */}
+          {isEtcSelected && (
+            <input
+              autoFocus
+              value={bizStep === 0 ? bizCustom : bizSubCustom}
+              onChange={e => bizStep === 0 ? setBizCustom(e.target.value) : setBizSubCustom(e.target.value)}
+              placeholder="업종을 직접 입력해주세요"
+              className="w-full mb-4"
+              style={{
+                height: 52, padding: "0 16px", borderRadius: 12,
+                border: "1.5px solid rgba(16,185,129,0.4)",
+                background: "rgba(16,185,129,0.06)", color: "white",
+                fontSize: "0.95rem", outline: "none",
+              }}
+            />
+          )}
+
+          <button
+            onClick={handleBizNext}
+            disabled={!isBizValid()}
+            className="w-full h-14 rounded-2xl transition-all active:scale-[0.99] mt-2"
+            style={{
+              background: isBizValid() ? "linear-gradient(135deg,#10b981,#34d399)" : "rgba(255,255,255,0.06)",
+              color: isBizValid() ? "white" : "rgba(255,255,255,0.25)",
+              fontSize: "1rem", fontWeight: 700, border: "none",
+              cursor: isBizValid() ? "pointer" : "not-allowed",
+              boxShadow: isBizValid() ? "0 8px 28px rgba(16,185,129,0.4)" : "none",
+            }}
+          >
+            {bizStep === 0 && bizCategory && bizCategory !== "기타" ? "세부 업종 선택하기" : "다음으로"}
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={PAGE_BG}>
