@@ -4,46 +4,10 @@ import { Store, ChevronLeft, Sparkles, TrendingUp, Megaphone, Users, Star, Badge
 import { NewResultReport } from "./NewResultReport";
 import { ExistingResultReport } from "./ExistingResultReport";
 import { DetailedStartupQuestionnaire } from "./DetailedStartupQuestionnaire";
-import { SimpleResultReport } from "./SimpleResultReport";
 
 /* ─────────────────────────────────────────
    데이터 정의
 ───────────────────────────────────────── */
-const Q_WORK_ENV = [
-    "손님들과 직접 대화하고 소통하며 생동감 있게 일하기 (접객 중심)",
-    "대면은 적더라도 기술적인 완성도나 제품의 질에 집중하기 (제조/기술 중심)",
-    "매장 시스템이 원활하게 돌아가도록 관리하고 유지하기 (운영/관리 중심)",
-    "온라인 환경에서 비대면으로 소통하며 업무 처리하기 (온라인 중심)",
-];
-
-const Q_TIME_ENERGY = [
-    "하루 12시간 이상 상주하며 모든 것을 직접 챙길 수 있습니다. (풀타임 올인)",
-    "표준 근로 시간(8~10시간) 내에서 규칙적으로 일하고 싶습니다. (안정적 운영)",
-    "본업이나 다른 일정이 있어 하루 몇 시간만 관리하고 싶습니다. (반자동/투잡)",
-    "가끔씩 방문하여 점검하는 무인 형태를 희망합니다. (시스템 운영)",
-];
-
-const Q_BUDGET = [
-    "3,000만 원 이하 (소자본/무점포 가능)",
-    "3,000만 원 ~ 7,000만 원 (소규모 매장)",
-    "7,000만 원 ~ 1억 5,000만 원 (일반적인 프랜차이즈/개인 매장)",
-    "1억 5,000만 원 이상 (대형 매장/핵심 상권)",
-];
-
-const Q_PRIORITY = [
-    "수익이 조금 적더라도 실패 확률이 낮은 검증된 아이템 (프랜차이즈/생필품)",
-    "경쟁은 치열해도 내 브랜드만의 개성과 높은 수익을 목표 (개인 브랜드/트렌드 아이템)",
-    "유행을 타지 않고 오랫동안 꾸준하게 운영 가능한 업종 (스테디셀러)",
-];
-
-const Q_AVOID = [
-    "새벽이나 이른 아침 출근",
-    "대면 스트레스 및 감정 노동",
-    "뜨거운 불 앞이나 고된 육체 노동",
-    "복잡한 식자재 발주 및 유통기한 관리",
-    "필수적인 SNS 소통 및 트렌드 쫓기",
-];
-
 const BUSINESS_TYPES = [
     "음식점 (한식/양식/중식 등)",
     "카페/음료",
@@ -51,30 +15,6 @@ const BUSINESS_TYPES = [
     "소매점 (편의점/의류 등)",
     "서비스업 (미용/피트니스 등)",
     "아직 모르겠어요",
-];
-
-const REGIONS = [
-    "서울 강남구/서초구",
-    "서울 마포구/용산구",
-    "서울 성동구/광진구",
-    "기타 서울 지역",
-    "경기/인천 수도권",
-    "그 외 지방",
-];
-
-const TARGET_CUSTOMERS_NEW = [
-    "10대~20대 학생",
-    "20대~30대 직장인",
-    "40대~50대 중장년층",
-    "가족 단위 고객",
-    "특정 연령층 없음",
-];
-
-const AVG_PAYMENT = [
-    "1만 원 미만 (가성비 중심)",
-    "1만 원 ~ 2만 원 (평균적인 수준)",
-    "2만 원 ~ 4만 원 (프리미엄 지향)",
-    "4만 원 이상 (고급화 전략)",
 ];
 
 // 기존 사장님 질문
@@ -617,15 +557,13 @@ type FlowState =
     | "deepPosInput"
     | "deepCategorySelect"
     | "deepQuestions"
-    | "q0new"
     | "detailedNew"
-    | "q1" | "q2" | "q3" | "q4" | "q5"
     | "q1ex" | "q2ex" | "q3ex" | "q4ex" | "q5ex" | "q6ex" | "q7ex" | "q8ex" | "q9ex"
     | "q10ex" | "q11ex" | "q12ex" | "q13ex" | "q14ex" | "q15ex" | "q16ex" | "q17ex"
     | "loading"
     | "result";
 
-type ChoiceFlowState = Exclude<FlowState, "analysisModeSelect" | "typeSelect" | "warningNew" | "existingNotice" | "exCategorySelect" | "existingQuestions" | "deepPosInput" | "deepCategorySelect" | "deepQuestions" | "q0new" | "detailedNew" | "q2ex" | "loading" | "result">;
+type ChoiceFlowState = Exclude<FlowState, "analysisModeSelect" | "typeSelect" | "warningNew" | "existingNotice" | "exCategorySelect" | "existingQuestions" | "deepPosInput" | "deepCategorySelect" | "deepQuestions" | "detailedNew" | "q2ex" | "loading" | "result">;
 
 const QUESTION_FLOW_CONFIG: Record<ChoiceFlowState, {
     step: number;
@@ -636,51 +574,6 @@ const QUESTION_FLOW_CONFIG: Record<ChoiceFlowState, {
     back: FlowState;
     next: FlowState;
 }> = {
-    q1: {
-        step: 1,
-        total: 5,
-        question: "가장 에너지를 얻는 업무 환경은 어떤 모습인가요?",
-        options: Q_WORK_ENV,
-        answerKey: "workEnv",
-        back: "q0new",
-        next: "q2",
-    },
-    q2: {
-        step: 2,
-        total: 5,
-        question: "현실적으로 매장 운영에 쏟을 수 있는 시간과 체력은 어느 정도인가요?",
-        options: Q_TIME_ENERGY,
-        answerKey: "timeEnergy",
-        back: "q1",
-        next: "q3",
-    },
-    q3: {
-        step: 3,
-        total: 5,
-        question: "준비하신 초기 투자금(보증금, 권리금, 인테리어 등 포함)의 최대치는 얼마인가요?",
-        options: Q_BUDGET,
-        answerKey: "budget",
-        back: "q2",
-        next: "q4",
-    },
-    q4: {
-        step: 4,
-        total: 5,
-        question: "사업의 수익성과 안정성 중 어디에 더 무게를 두고 싶으신가요?",
-        options: Q_PRIORITY,
-        answerKey: "priority",
-        back: "q3",
-        next: "q5",
-    },
-    q5: {
-        step: 5,
-        total: 5,
-        question: "창업을 하더라도, 이것만큼은 절대 피하고 싶은 상황은 무엇인가요?",
-        options: Q_AVOID,
-        answerKey: "avoid",
-        back: "q4",
-        next: "loading",
-    },
     q1ex: {
         step: 1,
         total: 17,
@@ -1154,7 +1047,6 @@ const DEEP_CATEGORY_QUESTION_MAP: Record<string, ExistingQuestion[]> = {
 
 export function AIAnalysisPage() {
     const [flow, setFlow] = useState<FlowState>("typeSelect");
-    const [userPath, setUserPath] = useState<"simpleNew" | "detailedNew" | "existing">("simpleNew");
     const [analysisMode, setAnalysisMode] = useState<AnalysisMode>("light");
     const [userType, setUserType] = useState<"new" | "existing">("new");
     const [answers, setAnswers] = useState<Record<string, string | string[]>>({});
@@ -1246,11 +1138,9 @@ export function AIAnalysisPage() {
         resetAnswers();
         setUserType(type);
         if (type === "new") {
-            setUserPath("simpleNew");
             setFlow("warningNew");
             return;
         }
-        setUserPath("existing");
         setFlow("analysisModeSelect");
     };
 
@@ -1388,12 +1278,10 @@ export function AIAnalysisPage() {
     const handleReset = () => {
         resetAnswers();
         setUserType("new");
-        setUserPath("simpleNew");
         setAnalysisMode("light");
         setFlow("typeSelect");
     };
     const handleSwitchToExisting = () => {
-        setUserPath("existing");
         startFlow("existing");
     };
 
@@ -1404,8 +1292,6 @@ export function AIAnalysisPage() {
                 onReset={handleReset}
             />
         );
-    if (flow === "result" && userPath === "simpleNew")
-        return <SimpleResultReport answers={answers} onReset={handleReset} onDetailedAnalysis={() => { setUserPath("detailedNew"); setFlow("detailedNew"); }} />;
     if (flow === "result")
         return <NewResultReport answers={answers} onReset={handleReset} onSwitchToExisting={handleSwitchToExisting} />;
 
@@ -1445,7 +1331,7 @@ export function AIAnalysisPage() {
                         </p>
                     </div>
                     <button
-                        onClick={() => setFlow("q0new")}
+                        onClick={() => setFlow("detailedNew")}
                         className="w-full h-14 rounded-2xl font-bold text-white transition-all"
                         style={{ background: "linear-gradient(135deg,#10b981,#34d399)", boxShadow: "0 8px 28px rgba(16,185,129,0.4)" }}
                     >
@@ -1456,75 +1342,9 @@ export function AIAnalysisPage() {
         </div>
     );
 
-    /* ── 설문 스텝 (신생 창업자) ── */
-    if (flow === "q0new") return (
-        <div style={PAGE_BG}>
-            <div className="min-h-screen flex flex-col items-center justify-start pt-24 px-4">
-                <div className="w-full max-w-xl">
-                    <div className="flex items-center mb-12">
-                        <button onClick={() => setFlow("warningNew")} className="flex items-center gap-1 text-sm font-medium" style={{ color: "rgba(255,255,255,0.4)" }}>
-                            <ChevronLeft className="w-4 h-4" /> 이전
-                        </button>
-                    </div>
-
-                    <div className="flex items-center gap-3 mb-10">
-                        <div className="w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0"
-                             style={{ background: "linear-gradient(135deg,#f97316,#fb923c)", boxShadow: "0 6px 20px rgba(249,115,22,0.4)" }}>
-                            <Store className="w-6 h-6 text-white" />
-                        </div>
-                        <div className="flex flex-col">
-                            <span className="text-xl font-black text-white leading-tight tracking-tight">소상광장</span>
-                            <span className="text-xs font-semibold" style={{ color: "rgba(255,255,255,0.4)" }}>AI 맞춤 분석</span>
-                        </div>
-                    </div>
-
-                    <h2 className="text-2xl font-black text-white mb-10">구체적인 창업 계획이 있으신가요?</h2>
-                    <div className="grid grid-cols-2 gap-4">
-                        {[
-                            { label: "예", value: "예", desc: "업종·위치 등 어느 정도 구체적인 계획이 있어요" },
-                            { label: "아니오", value: "아니오", desc: "아직 막막해도 괜찮아요! AI와 함께 나만의 업종을 찾아보세요." },
-                        ].map((opt) => {
-                            const selected = ans("hasPlan") === opt.value;
-                            return (
-                                <button
-                                    key={opt.value}
-                                    onClick={() => set("hasPlan", opt.value)}
-                                    className="flex flex-col items-start p-6 rounded-2xl border-2 text-left transition-all"
-                                    style={{
-                                        background: selected ? "rgba(16,185,129,0.15)" : "rgba(255,255,255,0.04)",
-                                        borderColor: selected ? "#10b981" : "rgba(255,255,255,0.08)",
-                                    }}
-                                >
-                                    <span className="text-2xl font-black text-white mb-2">{opt.label}</span>
-                                    <span className="text-xs leading-relaxed" style={{ color: "rgba(255,255,255,0.45)" }}>{opt.desc}</span>
-                                </button>
-                            );
-                        })}
-                    </div>
-                    <button
-                        disabled={!ans("hasPlan")}
-                        onClick={() => {
-                            const path = ans("hasPlan") === "예" ? "detailedNew" : "simpleNew";
-                            setUserPath(path);
-                            setFlow(ans("hasPlan") === "예" ? "detailedNew" : "q1");
-                        }}
-                        className="mt-8 w-full h-14 rounded-2xl font-bold text-white transition-all"
-                        style={{
-                            background: ans("hasPlan") ? "linear-gradient(135deg,#10b981,#34d399)" : "rgba(255,255,255,0.08)",
-                            color: ans("hasPlan") ? "white" : "rgba(255,255,255,0.3)",
-                            cursor: ans("hasPlan") ? "pointer" : "not-allowed",
-                        }}
-                    >
-                        다음
-                    </button>
-                </div>
-            </div>
-        </div>
-    );
-
     if (flow === "detailedNew") return (
         <DetailedStartupQuestionnaire
-            onBack={() => setFlow("q0new")}
+            onBack={() => setFlow("warningNew")}
             onComplete={(detailedAnswers) => {
                 setAnswers(prev => ({ ...prev, ...detailedAnswers }));
                 setFlow("loading");
