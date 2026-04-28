@@ -2,15 +2,16 @@ import { useState } from "react";
 import { Link } from "react-router";
 import {
   Download, RefreshCw, MapPin, TrendingUp as TrendUp,
-  CheckCircle2, AlertTriangle, Flame, ChevronRight, Clock,
+  CheckCircle2, AlertTriangle, ChevronRight, Clock,
   LayoutGrid, FileText, Hammer, Rocket, Circle,
 } from "lucide-react";
+import type { AiAnalysisResult } from "../utils/openai";
+import type { SbizStoreData, CommercialContext } from "../utils/budongsan";
 
 /* ── 공통 헤더 ── */
 function ReportHeader({ onReset }: { onReset: () => void }) {
   return (
     <div className="mb-8">
-      {/* 뒤로가기 */}
       <button
         onClick={onReset}
         className="flex items-center gap-1.5 mb-6 transition-all"
@@ -88,19 +89,41 @@ function ReportFooter() {
   );
 }
 
+const RISK_COLOR: Record<string, string> = { "높음": "#ef4444", "중간": "#f59e0b", "낮음": "#10b981" };
+const RISK_BG: Record<string, string>    = { "높음": "rgba(239,68,68,0.1)", "중간": "rgba(245,158,11,0.1)", "낮음": "rgba(16,185,129,0.1)" };
+
 /* ─────────────────────────────────────────
    신생 창업자 리포트 (메인 export)
 ───────────────────────────────────────── */
 export function NewResultReport({
-  answers, onReset, onSwitchToExisting,
+  answers, aiResult, aiError, sbizData, commercialCtx, onReset, onSwitchToExisting,
 }: {
-  answers: Record<string, string | string[]>; onReset: () => void; onSwitchToExisting?: () => void;
+  answers: Record<string, string | string[]>;
+  aiResult: AiAnalysisResult | null;
+  aiError: boolean;
+  sbizData: SbizStoreData | null;
+  commercialCtx: CommercialContext | null;
+  onReset: () => void;
+  onSwitchToExisting?: () => void;
 }) {
   return (
     <div style={{ background: "#141720", minHeight: "100vh", color: "white", padding: "32px 20px" }}>
       <div style={{ maxWidth: "1100px", margin: "0 auto" }}>
         <ReportHeader onReset={onReset} />
-        <LocationAnalysisSection answers={answers} onSwitchToExisting={onSwitchToExisting} />
+        {aiError && (
+          <div className="rounded-2xl p-4 mb-8 flex items-center gap-3"
+            style={{ background: "rgba(249,115,22,0.08)", border: "1px solid rgba(249,115,22,0.25)" }}>
+            <AlertTriangle className="w-4 h-4 flex-shrink-0" style={{ color: "#f97316" }} />
+            <p style={{ fontSize: "0.9rem", color: "rgba(255,255,255,0.6)" }}>AI 분석 중 오류가 발생했습니다. 기본 리포트를 표시합니다.</p>
+          </div>
+        )}
+        <LocationAnalysisSection
+          answers={answers}
+          aiResult={aiResult}
+          sbizData={sbizData}
+          commercialCtx={commercialCtx}
+          onSwitchToExisting={onSwitchToExisting}
+        />
         <ReportFooter />
       </div>
     </div>
@@ -108,7 +131,7 @@ export function NewResultReport({
 }
 
 /* ─────────────────────────────────────────
-   창업 단계 사이드바 + 상권 분석 섹션
+   창업 단계 사이드바 + 콘텐츠
 ───────────────────────────────────────── */
 const STAGES = [
   { num: 1, label: "창업 방향 설정" },
@@ -116,13 +139,21 @@ const STAGES = [
   { num: 3, label: "상권 분석" },
   { num: 4, label: "입지 선정" },
   { num: 5, label: "사업 계획 수립" },
-  { num: 6, label: "점포 확보" },
+  { num: 6, label: "임대료 추정" },
   { num: 7, label: "인허가 및 등록" },
   { num: 8, label: "인테리어 및 설비" },
   { num: 9, label: "시험 운영 (피드백)" },
 ];
 
-function LocationAnalysisSection({ answers, onSwitchToExisting }: { answers: Record<string, string | string[]>; onSwitchToExisting?: () => void }) {
+function LocationAnalysisSection({
+  answers, aiResult, sbizData, commercialCtx, onSwitchToExisting,
+}: {
+  answers: Record<string, string | string[]>;
+  aiResult: AiAnalysisResult | null;
+  sbizData: SbizStoreData | null;
+  commercialCtx: CommercialContext | null;
+  onSwitchToExisting?: () => void;
+}) {
   const [currentStep, setCurrentStep] = useState(2);
   const [checkedItems, setCheckedItems] = useState<Set<number>>(new Set([0, 1]));
   const [showCompletion, setShowCompletion] = useState(false);
@@ -136,78 +167,18 @@ function LocationAnalysisSection({ answers, onSwitchToExisting }: { answers: Rec
   };
 
   const bizType = answers.bizType || "카페/음료";
-  const region  = answers.region  || "서울 마포구/용산구";
-  const target  = answers.target  || "20대~30대 직장인";
 
   const progressPct = Math.round(((currentStep - 1) / STAGES.length) * 100);
-
-  /* ── 상권 비교 데이터 (region 기반) ── */
-  const isSeoul   = region.includes("서울");
-  const isGangnam = region.includes("강남");
-
-  const areaA = isGangnam ? "강남역 상권" : isSeoul ? "홍대 상권" : "수원역 상권";
-  const areaB = isGangnam ? "역삼동 이면도로" : isSeoul ? "서신동 이면도로" : "권선동 이면도로";
-
-  const compareRows = [
-    {
-      label: "유동인구",
-      aLabel: `${areaA} 압승`,
-      aHot: true,
-      bLabel: `${areaB} 보통`,
-      bHot: false,
-    },
-    {
-      label: "평균 임대료",
-      aLabel: `${areaA}가 40% 높음`,
-      aHot: true,
-      bLabel: `${areaB} 저렴`,
-      bHot: false,
-    },
-  ];
-
-  const aiRec = `${areaB} (초기 자본 절약 & 경쟁도 낮음)`;
-
-  /* ── 상권 DNA 태그 (bizType + target 기반) ── */
-  const dnaTags = bizType.includes("카페")
-    ? ["20대 비율 65%", "카페 밀집 지역", "트렌드 민감도 최상", "주말 저녁 피크", "데이트 코스 중심"]
-    : bizType.includes("음식")
-    ? ["점심 수요 최상", "직장인 밀집", "배달 주문 높음", "회전율 중심", "가성비 선호"]
-    : ["소비력 중상", "유동인구 안정", "주거 밀집", "단골 중심", "지역 커뮤니티 활성"];
-
-  const dnaDesc = bizType.includes("카페")
-    ? "SNS 감성의 트렌디한 인테리어가 필수적이며, 객단가보다 회전율을 높이는 전략이 유리합니다."
-    : bizType.includes("음식")
-    ? "점심 피크 타임 공략과 배달 채널 병행 운영이 핵심입니다. 메뉴 단순화로 회전율을 높이세요."
-    : "단골 고객 확보와 지역 커뮤니티 마케팅을 중심으로 안정적인 매출 기반을 만드세요.";
-
-  /* ── 위험 요소 (bizType 기반) ── */
-  const risks = bizType.includes("카페")
-    ? [
-        { color: "#ef4444", title: "동일 업종 과다", desc: `반경 500m 내 유사 업종 카페 42개로 경쟁이 매우 심화되어 있습니다.` },
-        { color: "#f59e0b", title: "상가 공실률 증가", desc: "최근 3개월간 메인 거리 이면도로의 공실률이 5% 상승했습니다." },
-      ]
-    : bizType.includes("음식")
-    ? [
-        { color: "#ef4444", title: "배달 수수료 부담", desc: "해당 상권 평균 배달앱 수수료율이 18%로 수익성에 영향을 줄 수 있습니다." },
-        { color: "#f59e0b", title: "원재료 가격 상승", desc: "최근 6개월간 주요 식자재 가격이 평균 12% 상승하는 추세입니다." },
-      ]
-    : [
-        { color: "#ef4444", title: "대형 프랜차이즈 진입", desc: "해당 상권에 대형 체인 2곳이 최근 오픈하여 경쟁 심화가 예상됩니다." },
-        { color: "#f59e0b", title: "임대료 상승세", desc: "해당 지역 상가 임대료가 분기 대비 7% 상승하는 추세입니다." },
-      ];
-
   const isLastStep = currentStep === STAGES.length;
 
   return (
     <div className="mt-8">
-      {/* 섹션 구분선 */}
       <div className="flex items-center gap-4 mb-6">
         <div style={{ height: "1px", flex: 1, background: "rgba(255,255,255,0.07)" }} />
         <span style={{ fontSize: "0.78rem", color: "rgba(255,255,255,0.25)", whiteSpace: "nowrap" }}>창업 단계별 가이드</span>
         <div style={{ height: "1px", flex: 1, background: "rgba(255,255,255,0.07)" }} />
       </div>
 
-      {/* 메인 패널 */}
       <div
         className="flex gap-0 overflow-hidden"
         style={{ borderRadius: "20px", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.03)" }}
@@ -221,7 +192,6 @@ function LocationAnalysisSection({ answers, onSwitchToExisting }: { answers: Rec
           <p style={{ fontSize: "1.8rem", fontWeight: 800, color: "#10b981", marginBottom: "10px", letterSpacing: "-0.03em" }}>
             {progressPct}%
           </p>
-          {/* 프로그레스 바 */}
           <div className="rounded-full mb-6 overflow-hidden" style={{ height: "5px", background: "rgba(255,255,255,0.08)" }}>
             <div
               className="h-full rounded-full transition-all duration-700"
@@ -229,15 +199,12 @@ function LocationAnalysisSection({ answers, onSwitchToExisting }: { answers: Rec
             />
           </div>
 
-          {/* 단계 목록 */}
           <div className="flex flex-col gap-0">
             {STAGES.map((stage, idx) => {
               const done    = stage.num < currentStep;
               const current = stage.num === currentStep;
-              const future  = stage.num > currentStep;
               return (
-                <div key={stage.num} className="flex items-start gap-3" style={{ paddingBottom: idx < STAGES.length - 1 ? "0" : "0" }}>
-                  {/* 아이콘 + 연결선 */}
+                <div key={stage.num} className="flex items-start gap-3">
                   <div className="flex flex-col items-center shrink-0" style={{ width: "20px" }}>
                     <div
                       className="flex items-center justify-center rounded-full shrink-0"
@@ -255,7 +222,6 @@ function LocationAnalysisSection({ answers, onSwitchToExisting }: { answers: Rec
                       <div style={{ width: "1.5px", flex: 1, minHeight: "24px", background: done ? "rgba(16,185,129,0.4)" : "rgba(255,255,255,0.07)", marginTop: "2px" }} />
                     )}
                   </div>
-                  {/* 텍스트 */}
                   <div style={{ paddingTop: "10px", paddingBottom: idx < STAGES.length - 1 ? "14px" : "0" }}>
                     <p style={{ fontSize: "0.68rem", color: current ? "#34d399" : done ? "rgba(16,185,129,0.7)" : "rgba(255,255,255,0.25)", fontWeight: current ? 700 : 500, marginBottom: "1px" }}>
                       단계 {stage.num}
@@ -284,64 +250,24 @@ function LocationAnalysisSection({ answers, onSwitchToExisting }: { answers: Rec
                 <p style={{ fontSize: "0.9rem", color: "rgba(255,255,255,0.4)" }}>창업 자금을 어떻게 마련할지 계획해요</p>
               </div>
 
-              <div className="grid md:grid-cols-2 gap-4 mb-4">
-                {/* 자금 조달 방법 비교 */}
-                <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "16px", padding: "22px" }}>
-                  <div className="flex items-start justify-between mb-5">
-                    <div>
-                      <p style={{ fontSize: "1rem", fontWeight: 700, marginBottom: "3px" }}>자금 조달 방법 비교</p>
-                      <p style={{ fontSize: "0.75rem", color: "rgba(255,255,255,0.35)" }}>AI 추천 비율 기준</p>
+              <div className="flex flex-col gap-3 mb-4">
+                {(aiResult?.fundingComparison ?? []).map((f, i) => (
+                  <div key={i} style={{ background: f.recommended ? "rgba(16,185,129,0.08)" : "rgba(255,255,255,0.04)", border: f.recommended ? "1.5px solid rgba(16,185,129,0.35)" : "1px solid rgba(255,255,255,0.08)", borderRadius: "16px", padding: "18px 20px" }}>
+                    <div className="flex items-start justify-between gap-3 mb-2">
+                      <div className="flex items-center gap-2">
+                        {f.recommended && <span style={{ fontSize: "0.65rem", fontWeight: 700, background: "rgba(16,185,129,0.2)", color: "#34d399", padding: "2px 8px", borderRadius: "99px" }}>AI 추천</span>}
+                        <span style={{ fontSize: "0.9rem", fontWeight: 700, color: "white" }}>{f.method}</span>
+                      </div>
+                      <span style={{ fontSize: "0.8rem", fontWeight: 700, color: "#34d399", flexShrink: 0 }}>{f.amount}</span>
                     </div>
-                    <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: "rgba(16,185,129,0.15)" }}>
-                      <TrendUp style={{ width: "15px", height: "15px", color: "#34d399" }} />
+                    <p style={{ fontSize: "0.75rem", color: "rgba(255,255,255,0.45)", marginBottom: "10px" }}>{f.suitability}</p>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>{f.pros.map((p, j) => <p key={j} style={{ fontSize: "0.72rem", color: "rgba(255,255,255,0.6)", display: "flex", gap: "6px", marginBottom: "4px" }}><span style={{ marginTop: "5px", width: "5px", height: "5px", borderRadius: "50%", background: "#10b981", flexShrink: 0 }} />{p}</p>)}</div>
+                      <div>{f.cons.map((c, j) => <p key={j} style={{ fontSize: "0.72rem", color: "rgba(255,255,255,0.6)", display: "flex", gap: "6px", marginBottom: "4px" }}><span style={{ marginTop: "5px", width: "5px", height: "5px", borderRadius: "50%", background: "#f97316", flexShrink: 0 }} />{c}</p>)}</div>
                     </div>
                   </div>
-                  {[
-                    { label: "자기 자본", pct: 40, color: "#10b981", desc: "리스크 최소, 이자 부담 없음" },
-                    { label: "정부 지원 대출", pct: 35, color: "#3b82f6", desc: "저금리 1~2%, 소진공 추천" },
-                    { label: "은행 대출", pct: 25, color: "#8b5cf6", desc: "일반 신용·담보 대출" },
-                  ].map((row) => (
-                    <div key={row.label} className="mb-4">
-                      <div className="flex items-center justify-between mb-1.5">
-                        <span style={{ fontSize: "0.82rem", color: "white", fontWeight: 600 }}>{row.label}</span>
-                        <span style={{ fontSize: "0.8rem", fontWeight: 700, color: row.color }}>{row.pct}%</span>
-                      </div>
-                      <div className="rounded-full overflow-hidden mb-1" style={{ height: "8px", background: "rgba(255,255,255,0.07)" }}>
-                        <div className="h-full rounded-full" style={{ width: `${row.pct}%`, background: `linear-gradient(90deg,${row.color},${row.color}aa)` }} />
-                      </div>
-                      <p style={{ fontSize: "0.72rem", color: "rgba(255,255,255,0.35)" }}>{row.desc}</p>
-                    </div>
-                  ))}
-                </div>
-
-                {/* 추천 지원 프로그램 */}
-                <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "16px", padding: "22px" }}>
-                  <div className="flex items-start justify-between mb-5">
-                    <div>
-                      <p style={{ fontSize: "1rem", fontWeight: 700, marginBottom: "3px" }}>추천 지원 프로그램</p>
-                      <p style={{ fontSize: "0.75rem", color: "rgba(255,255,255,0.35)" }}>지금 신청 가능한 제도</p>
-                    </div>
-                    <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: "rgba(245,158,11,0.15)" }}>
-                      <FileText style={{ width: "15px", height: "15px", color: "#fbbf24" }} />
-                    </div>
-                  </div>
-                  {[
-                    { name: "소공인 특화 자금", agency: "소상공인진흥공단", limit: "최대 7천만원 / 연 2%", tag: "추천" },
-                    { name: "청년 창업 사관학교", agency: "중소벤처기업부", limit: "최대 1억 / 무이자", tag: "청년" },
-                    { name: "신용보증기금 창업대출", agency: "신용보증기금", limit: "최대 5천만원 / 연 3%", tag: "보증" },
-                  ].map((prog) => (
-                    <div key={prog.name} className="flex items-start gap-3 py-3" style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
-                      <span className="px-2 py-0.5 rounded-full shrink-0 mt-0.5" style={{ fontSize: "0.62rem", fontWeight: 700, background: "rgba(16,185,129,0.2)", color: "#34d399" }}>{prog.tag}</span>
-                      <div>
-                        <p style={{ fontSize: "0.85rem", fontWeight: 700, color: "white", marginBottom: "2px" }}>{prog.name}</p>
-                        <p style={{ fontSize: "0.72rem", color: "rgba(255,255,255,0.35)", marginBottom: "2px" }}>{prog.agency}</p>
-                        <p style={{ fontSize: "0.75rem", color: "#fbbf24", fontWeight: 600 }}>{prog.limit}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                ))}
               </div>
-
               <div style={{ marginBottom: "24px" }} />
             </>
           )}
@@ -358,52 +284,87 @@ function LocationAnalysisSection({ answers, onSwitchToExisting }: { answers: Rec
               </div>
 
               <div className="grid md:grid-cols-2 gap-4 mb-4">
-                {/* 상권 DNA 분석 */}
+                {/* 상권 업종 분포 */}
                 <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "16px", padding: "22px" }}>
-                  <div className="flex items-start justify-between mb-4">
-                    <div>
-                      <p style={{ fontSize: "1rem", fontWeight: 700, marginBottom: "3px" }}>상권 DNA 분석</p>
-                      <p style={{ fontSize: "0.75rem", color: "rgba(255,255,255,0.35)" }}>{region} 핵심 요약</p>
-                    </div>
-                    <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: "rgba(59,130,246,0.18)" }}>
-                      <TrendUp style={{ width: "15px", height: "15px", color: "#60a5fa" }} />
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap gap-2 mb-4">
-                    {dnaTags.map((tag) => (
-                      <span key={tag} className="px-2.5 py-1 rounded-full" style={{ fontSize: "0.72rem", fontWeight: 500, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.65)" }}>
-                        {tag}
+                  <div className="flex items-center justify-between mb-4">
+                    <p style={{ fontSize: "1rem", fontWeight: 700 }}>상권 업종 분포</p>
+                    {sbizData && (
+                      <span style={{ fontSize: "0.68rem", padding: "2px 8px", borderRadius: "99px", background: "rgba(16,185,129,0.12)", color: "#34d399", border: "1px solid rgba(16,185,129,0.2)" }}>
+                        소상공인 API
                       </span>
-                    ))}
+                    )}
                   </div>
-                  <p style={{ fontSize: "0.83rem", color: "rgba(255,255,255,0.5)", lineHeight: 1.6 }}>{dnaDesc}</p>
+
+                  {aiResult?.sbizAnalysis && (
+                    <div style={{ background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.2)", borderRadius: "12px", padding: "12px 14px", marginBottom: "14px" }}>
+                      <div className="flex items-center justify-between mb-1">
+                        <span style={{ fontSize: "0.72rem", fontWeight: 700, color: "#34d399" }}>상권 적합도</span>
+                        <span style={{ fontSize: "1rem", fontWeight: 800, color: "#34d399" }}>{aiResult.sbizAnalysis.overallScore}점</span>
+                      </div>
+                      <p style={{ fontSize: "0.75rem", color: "rgba(255,255,255,0.6)", lineHeight: 1.5 }}>{aiResult.sbizAnalysis.summary}</p>
+                    </div>
+                  )}
+
+                  <div className="flex flex-col gap-2.5">
+                    {(() => {
+                      const breakdown = sbizData
+                        ? (() => {
+                            const catMap = new Map<string, number>();
+                            sbizData.stores.forEach((s) => {
+                              const cat = s.indsMclsNm || s.indsSclsNm || "기타";
+                              catMap.set(cat, (catMap.get(cat) ?? 0) + 1);
+                            });
+                            return [...catMap.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([cat, cnt]) => ({
+                              category: cat,
+                              count: cnt,
+                              competition: (cnt >= 8 ? "높음" : cnt >= 4 ? "중간" : "낮음") as "높음" | "중간" | "낮음",
+                            }));
+                          })()
+                        : (aiResult?.sbizAnalysis?.storeBreakdown ?? []);
+                      const maxCount = Math.max(...breakdown.map((b) => b.count), 1);
+                      return breakdown.map((b, i) => (
+                        <div key={i}>
+                          <div className="flex items-center justify-between mb-1">
+                            <span style={{ fontSize: "0.78rem", color: "rgba(255,255,255,0.75)" }}>{b.category}</span>
+                            <div className="flex items-center gap-2">
+                              <span style={{ fontSize: "0.65rem", padding: "1px 6px", borderRadius: "99px", background: RISK_BG[b.competition] ?? "rgba(255,255,255,0.06)", color: RISK_COLOR[b.competition] ?? "white" }}>{b.competition}</span>
+                              <span style={{ fontSize: "0.7rem", color: "rgba(255,255,255,0.4)" }}>{b.count}개</span>
+                            </div>
+                          </div>
+                          <div className="rounded-full overflow-hidden" style={{ height: "5px", background: "rgba(255,255,255,0.07)" }}>
+                            <div className="h-full rounded-full" style={{ width: `${(b.count / maxCount) * 100}%`, background: b.competition === "높음" ? "#ef4444" : b.competition === "중간" ? "#f59e0b" : "#10b981" }} />
+                          </div>
+                        </div>
+                      ));
+                    })()}
+                  </div>
+
+                  {aiResult?.sbizAnalysis?.competitionLevel && (
+                    <p style={{ fontSize: "0.72rem", color: "rgba(255,255,255,0.4)", marginTop: "12px", lineHeight: 1.5 }}>
+                      💡 {aiResult.sbizAnalysis.competitionLevel}
+                    </p>
+                  )}
                 </div>
 
-                {/* 위험 요소 알림 */}
+                {/* 위험 요소 분석 */}
                 <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "16px", padding: "22px" }}>
-                  <div className="flex items-start justify-between mb-4">
-                    <div>
-                      <p style={{ fontSize: "1rem", fontWeight: 700, marginBottom: "3px" }}>위험 요소 알림</p>
-                      <p style={{ fontSize: "0.75rem", color: "rgba(255,255,255,0.35)" }}>창업 경고 시그널</p>
-                    </div>
-                    <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: "rgba(239,68,68,0.15)" }}>
-                      <AlertTriangle style={{ width: "15px", height: "15px", color: "#f87171" }} />
-                    </div>
-                  </div>
+                  <p style={{ fontSize: "1rem", fontWeight: 700, marginBottom: "16px" }}>위험 요소 분석</p>
                   <div className="flex flex-col gap-3">
-                    {risks.map((risk) => (
-                      <div key={risk.title} className="rounded-xl p-4" style={{ background: `${risk.color}12`, border: `1px solid ${risk.color}30` }}>
-                        <div className="flex items-center gap-2 mb-2">
-                          <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: risk.color, flexShrink: 0 }} />
-                          <p style={{ fontSize: "0.88rem", fontWeight: 700, color: "white" }}>{risk.title}</p>
+                    {(aiResult?.riskFactors ?? []).map((r, i) => (
+                      <div key={i} style={{ background: RISK_BG[r.level] ?? "rgba(255,255,255,0.04)", border: `1px solid ${RISK_COLOR[r.level] ?? "#fff"}22`, borderRadius: "12px", padding: "14px 16px" }}>
+                        <div className="flex items-center gap-2 mb-1">
+                          <span style={{ fontSize: "0.65rem", fontWeight: 700, padding: "2px 8px", borderRadius: "99px", background: RISK_BG[r.level], color: RISK_COLOR[r.level] }}>{r.level}</span>
+                          <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "white" }}>{r.category}</span>
                         </div>
-                        <p style={{ fontSize: "0.78rem", color: "rgba(255,255,255,0.5)", lineHeight: 1.55 }}>{risk.desc}</p>
+                        <p style={{ fontSize: "0.75rem", color: "rgba(255,255,255,0.5)", marginBottom: "6px" }}>{r.description}</p>
+                        <p style={{ fontSize: "0.72rem", color: "rgba(255,255,255,0.4)", display: "flex", gap: "5px", alignItems: "flex-start" }}>
+                          <CheckCircle2 style={{ width: "12px", height: "12px", color: "#10b981", flexShrink: 0, marginTop: "1px" }} />{r.mitigation}
+                        </p>
                       </div>
                     ))}
                   </div>
                 </div>
               </div>
-
               <div style={{ marginBottom: "24px" }} />
             </>
           )}
@@ -419,32 +380,57 @@ function LocationAnalysisSection({ answers, onSwitchToExisting }: { answers: Rec
                 <p style={{ fontSize: "0.9rem", color: "rgba(255,255,255,0.4)" }}>최적의 가게 위치를 골라봐요</p>
               </div>
 
-              {/* 상권 비교 분석 (풀 너비) */}
-              <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "16px", padding: "22px", marginBottom: "24px" }}>
-                <div className="flex items-start justify-between mb-5">
-                  <div>
-                    <p style={{ fontSize: "1rem", fontWeight: 700, marginBottom: "3px" }}>상권 비교 분석</p>
-                    <p style={{ fontSize: "0.75rem", color: "rgba(255,255,255,0.35)" }}>{areaA} vs {areaB}</p>
-                  </div>
-                  <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: "rgba(16,185,129,0.15)" }}>
-                    <MapPin style={{ width: "15px", height: "15px", color: "#34d399" }} />
-                  </div>
-                </div>
-                <div className="flex flex-col gap-3 mb-5">
-                  {compareRows.map((row) => (
-                    <div key={row.label} className="flex items-center justify-between rounded-xl px-4 py-3" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)" }}>
-                      <span style={{ fontSize: "0.85rem", color: "rgba(255,255,255,0.55)" }}>{row.label}</span>
-                      <span className="flex items-center gap-1 px-3 py-1 rounded-full" style={{ fontSize: "0.78rem", fontWeight: 600, background: row.aHot ? "rgba(239,68,68,0.15)" : "rgba(255,255,255,0.05)", color: row.aHot ? "#f87171" : "rgba(255,255,255,0.5)" }}>
-                        {row.aLabel} {row.aHot && <Flame style={{ width: "10px", height: "10px" }} />}
-                      </span>
+              {/* AI 입지 추천 */}
+              <div className="flex flex-col gap-3 mb-4">
+                {(aiResult?.sbizAnalysis?.locationRecommendations ?? []).map((loc) => (
+                  <div key={loc.rank} style={{ background: loc.rank === 1 ? "rgba(16,185,129,0.07)" : "rgba(255,255,255,0.04)", border: loc.rank === 1 ? "1.5px solid rgba(16,185,129,0.3)" : "1px solid rgba(255,255,255,0.08)", borderRadius: "16px", padding: "18px 20px" }}>
+                    <div className="flex items-start justify-between gap-3 mb-2">
+                      <div className="flex items-center gap-2">
+                        {loc.rank === 1 && (
+                          <span style={{ fontSize: "0.65rem", fontWeight: 700, padding: "2px 8px", borderRadius: "99px", background: "rgba(16,185,129,0.2)", color: "#34d399" }}>AI 1순위</span>
+                        )}
+                        <span style={{ fontSize: "0.9rem", fontWeight: 700, color: "white" }}>{loc.area}</span>
+                      </div>
+                      <span style={{ fontSize: "0.9rem", fontWeight: 800, color: loc.score >= 80 ? "#34d399" : loc.score >= 65 ? "#f59e0b" : "#f87171", flexShrink: 0 }}>{loc.score}점</span>
                     </div>
-                  ))}
-                </div>
-                <div style={{ background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.18)", borderRadius: "10px", padding: "14px 16px" }}>
-                  <p style={{ fontSize: "0.72rem", color: "#34d399", fontWeight: 600, marginBottom: "4px" }}>AI의 최종 추천</p>
-                  <p style={{ fontSize: "0.88rem", fontWeight: 700, color: "white" }}>{aiRec}</p>
-                </div>
+                    <div className="rounded-full overflow-hidden mb-3" style={{ height: "5px", background: "rgba(255,255,255,0.07)" }}>
+                      <div className="h-full rounded-full" style={{ width: `${loc.score}%`, background: loc.score >= 80 ? "linear-gradient(90deg,#10b981,#34d399)" : loc.score >= 65 ? "#f59e0b" : "#ef4444" }} />
+                    </div>
+                    <p style={{ fontSize: "0.75rem", color: "rgba(255,255,255,0.5)", marginBottom: "10px" }}>💡 {loc.reason}</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>{loc.pros.map((p, j) => <p key={j} style={{ fontSize: "0.7rem", color: "rgba(255,255,255,0.6)", display: "flex", gap: "5px", marginBottom: "3px" }}><span style={{ marginTop: "4px", width: "4px", height: "4px", borderRadius: "50%", background: "#10b981", flexShrink: 0 }} />{p}</p>)}</div>
+                      <div>{loc.cons.map((c, j) => <p key={j} style={{ fontSize: "0.7rem", color: "rgba(255,255,255,0.6)", display: "flex", gap: "5px", marginBottom: "3px" }}><span style={{ marginTop: "4px", width: "4px", height: "4px", borderRadius: "50%", background: "#f97316", flexShrink: 0 }} />{c}</p>)}</div>
+                    </div>
+                  </div>
+                ))}
               </div>
+
+              {/* 상가 밀집 건물 현황 (소상공인 API) */}
+              {sbizData && sbizData.buildingGroups.length > 0 && (
+                <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "16px", padding: "20px", marginBottom: "24px" }}>
+                  <div className="flex items-center gap-2 mb-3">
+                    <MapPin style={{ width: "14px", height: "14px", color: "#34d399" }} />
+                    <p style={{ fontSize: "0.88rem", fontWeight: 700, color: "white" }}>상가 밀집 건물 현황</p>
+                    <span style={{ fontSize: "0.68rem", padding: "2px 8px", borderRadius: "99px", background: "rgba(16,185,129,0.12)", color: "#34d399", border: "1px solid rgba(16,185,129,0.2)" }}>소상공인 API</span>
+                  </div>
+                  <div className="flex flex-col gap-0">
+                    {sbizData.buildingGroups.slice(0, 5).map((bld, i) => (
+                      <div key={i} className="flex items-start justify-between py-2.5" style={{ borderBottom: i < 4 ? "1px solid rgba(255,255,255,0.05)" : "none" }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <p style={{ fontSize: "0.82rem", fontWeight: 600, color: "white", marginBottom: "2px" }}>{bld.bldNm || "건물명 미상"}</p>
+                          <p style={{ fontSize: "0.7rem", color: "rgba(255,255,255,0.4)", marginBottom: "4px" }}>📍 {bld.address}</p>
+                          <div className="flex flex-wrap gap-1">
+                            {bld.bizTypes.slice(0, 4).map((t, j) => (
+                              <span key={j} style={{ fontSize: "0.62rem", padding: "1px 6px", borderRadius: "99px", background: "rgba(16,185,129,0.1)", color: "#6ee7b7" }}>{t}</span>
+                            ))}
+                          </div>
+                        </div>
+                        <span style={{ fontSize: "0.72rem", fontWeight: 700, color: "#34d399", flexShrink: 0, marginLeft: "8px" }}>{bld.count}개</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </>
           )}
 
@@ -452,239 +438,165 @@ function LocationAnalysisSection({ answers, onSwitchToExisting }: { answers: Rec
           {currentStep === 5 && (
             <>
               <div className="mb-6">
-                <div
-                  className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full mb-4"
-                  style={{ background: "rgba(16,185,129,0.15)", border: "1px solid rgba(16,185,129,0.3)", fontSize: "0.75rem", fontWeight: 600, color: "#34d399" }}
-                >
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full mb-4" style={{ background: "rgba(16,185,129,0.15)", border: "1px solid rgba(16,185,129,0.3)", fontSize: "0.75rem", fontWeight: 600, color: "#34d399" }}>
                   <Clock style={{ width: "11px", height: "11px" }} /> 현재 단계
                 </div>
-                <h2 style={{ fontSize: "clamp(1.5rem, 3vw, 2rem)", fontWeight: 800, letterSpacing: "-0.03em", marginBottom: "6px" }}>
-                  사업 계획 수립
-                </h2>
+                <h2 style={{ fontSize: "clamp(1.5rem, 3vw, 2rem)", fontWeight: 800, letterSpacing: "-0.03em", marginBottom: "6px" }}>사업 계획 수립</h2>
                 <p style={{ fontSize: "0.9rem", color: "rgba(255,255,255,0.4)" }}>예산과 수익 구조를 계획해요</p>
               </div>
 
-              <div className="grid md:grid-cols-2 gap-4 mb-4" style={{ flex: 1 }}>
+              <div className="grid md:grid-cols-2 gap-4 mb-4">
                 {/* 업종별 수익성 비교 */}
                 <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "16px", padding: "22px" }}>
-                  <div className="flex items-start justify-between mb-5">
-                    <div>
-                      <p style={{ fontSize: "1rem", fontWeight: 700, marginBottom: "3px" }}>업종별 수익성 비교</p>
-                      <p style={{ fontSize: "0.75rem", color: "rgba(255,255,255,0.35)" }}>월 평균 순수익 기준</p>
-                    </div>
-                    <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: "rgba(16,185,129,0.15)" }}>
-                      <TrendUp style={{ width: "15px", height: "15px", color: "#34d399" }} />
-                    </div>
-                  </div>
-
-                  {/* 바 차트 */}
-                  {[
-                    {
-                      label: "카페/음료",
-                      value: bizType.includes("카페") ? 320 : 280,
-                      max: 500,
-                      color: "#10b981",
-                      isMe: bizType.includes("카페"),
-                      display: bizType.includes("카페") ? "약 320만원" : "약 280만원",
-                    },
-                    {
-                      label: "음식점",
-                      value: bizType.includes("음식") ? 450 : 420,
-                      max: 500,
-                      color: "#3b82f6",
-                      isMe: bizType.includes("음식"),
-                      display: bizType.includes("음식") ? "약 450만원" : "약 420만원",
-                    },
-                    {
-                      label: "기타 업종",
-                      value: 260,
-                      max: 500,
-                      color: "#8b5cf6",
-                      isMe: !bizType.includes("카페") && !bizType.includes("음식"),
-                      display: "약 260만원",
-                    },
-                  ].map((bar) => (
-                    <div key={bar.label} className="mb-4">
-                      <div className="flex items-center justify-between mb-1.5">
-                        <div className="flex items-center gap-2">
-                          <span style={{ fontSize: "0.82rem", color: bar.isMe ? "white" : "rgba(255,255,255,0.5)", fontWeight: bar.isMe ? 700 : 400 }}>
-                            {bar.label}
-                          </span>
-                          {bar.isMe && (
-                            <span
-                              className="px-1.5 py-0.5 rounded"
-                              style={{ fontSize: "0.62rem", fontWeight: 700, background: `${bar.color}25`, color: bar.color }}
-                            >
-                              내 업종
-                            </span>
-                          )}
+                  <p style={{ fontSize: "1rem", fontWeight: 700, marginBottom: "16px" }}>업종별 수익성 비교</p>
+                  {(aiResult?.profitability ?? []).map((bar) => {
+                    const maxVal = Math.max(...(aiResult?.profitability ?? []).map((b) => b.profitValue), 600);
+                    return (
+                      <div key={bar.bizType} className="mb-4">
+                        <div className="flex items-center justify-between mb-1.5">
+                          <div className="flex items-center gap-2">
+                            <span style={{ fontSize: "0.82rem", color: bar.isTarget ? "white" : "rgba(255,255,255,0.5)", fontWeight: bar.isTarget ? 700 : 400 }}>{bar.bizType}</span>
+                            {bar.isTarget && <span style={{ fontSize: "0.62rem", fontWeight: 700, background: "rgba(16,185,129,0.2)", color: "#34d399", padding: "2px 6px", borderRadius: "4px" }}>내 업종</span>}
+                          </div>
+                          <span style={{ fontSize: "0.8rem", fontWeight: 600, color: bar.isTarget ? "#34d399" : "rgba(255,255,255,0.4)" }}>{bar.monthlyProfit}</span>
                         </div>
-                        <span style={{ fontSize: "0.8rem", fontWeight: 600, color: bar.isMe ? bar.color : "rgba(255,255,255,0.4)" }}>
-                          {bar.display}
-                        </span>
+                        <div className="rounded-full overflow-hidden" style={{ height: "8px", background: "rgba(255,255,255,0.07)" }}>
+                          <div className="h-full rounded-full" style={{ width: `${(bar.profitValue / maxVal) * 100}%`, background: bar.isTarget ? "linear-gradient(90deg,#10b981,#34d399)" : "rgba(255,255,255,0.15)" }} />
+                        </div>
+                        {bar.isTarget && bar.aiTip && (
+                          <div style={{ background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.18)", borderRadius: "10px", padding: "10px 12px", marginTop: "10px" }}>
+                            <p style={{ fontSize: "0.72rem", color: "#34d399", fontWeight: 600, marginBottom: "3px" }}>AI 제안</p>
+                            <p style={{ fontSize: "0.78rem", color: "white", lineHeight: 1.5 }}>{bar.aiTip}</p>
+                          </div>
+                        )}
                       </div>
-                      <div className="rounded-full overflow-hidden" style={{ height: "8px", background: "rgba(255,255,255,0.07)" }}>
-                        <div
-                          className="h-full rounded-full"
-                          style={{ width: `${(bar.value / bar.max) * 100}%`, background: bar.isMe ? `linear-gradient(90deg,${bar.color},${bar.color}aa)` : "rgba(255,255,255,0.15)" }}
-                        />
-                      </div>
-                    </div>
-                  ))}
-
-                  <div style={{ background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.18)", borderRadius: "10px", padding: "12px 14px", marginTop: "8px" }}>
-                    <p style={{ fontSize: "0.72rem", color: "#34d399", fontWeight: 600, marginBottom: "4px" }}>AI 제안</p>
-                    <p style={{ fontSize: "0.83rem", color: "white", lineHeight: 1.5 }}>
-                      {bizType.includes("카페")
-                        ? "카페는 객단가를 높이는 시그니처 메뉴 개발과 굿즈 판매로 수익성을 개선할 수 있습니다."
-                        : bizType.includes("음식")
-                        ? "음식점은 점심 세트 메뉴와 배달 채널 병행으로 안정적인 수익 구조를 만드세요."
-                        : "단골 고객 기반의 정기 구독 모델 도입으로 예측 가능한 매출을 확보하세요."}
-                    </p>
-                  </div>
+                    );
+                  })}
                 </div>
 
-                {/* 초기 투자 예산 시뮬레이터 */}
+                {/* 초기 투자 예산 */}
                 <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "16px", padding: "22px" }}>
-                  <div className="flex items-start justify-between mb-5">
-                    <div>
-                      <p style={{ fontSize: "1rem", fontWeight: 700, marginBottom: "3px" }}>초기 투자 예산 시뮬레이터</p>
-                      <p style={{ fontSize: "0.75rem", color: "rgba(255,255,255,0.35)" }}>예상 창업 비용 분석</p>
-                    </div>
-                    <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: "rgba(245,158,11,0.15)" }}>
-                      <AlertTriangle style={{ width: "15px", height: "15px", color: "#fbbf24" }} />
-                    </div>
-                  </div>
-
-                  {/* 항목별 비용 */}
-                  {[
-                    {
-                      label: "보증금",
-                      value: isGangnam ? "8,000만원" : isSeoul ? "5,000만원" : "3,000만원",
-                      note: "통상 월세 10~15개월 치",
-                    },
-                    {
-                      label: "인테리어 (평수 기준)",
-                      value: bizType.includes("카페") ? "3,500만원" : "2,500만원",
-                      note: "15평 기준 / 업종 특화 디자인 포함",
-                    },
-                    {
-                      label: "초기 물대 및 비품",
-                      value: bizType.includes("카페") ? "900만원" : "700만원",
-                      note: "장비·재고 첫 발주 기준",
-                    },
-                    {
-                      label: "홍보 및 예비 자금",
-                      value: "600만원",
-                      note: "오픈 마케팅 + 3개월 운영 여유금",
-                    },
-                  ].map((item, i) => (
-                    <div
-                      key={item.label}
-                      className="flex items-center justify-between py-3"
-                      style={{ borderBottom: i < 3 ? "1px solid rgba(255,255,255,0.06)" : "none" }}
-                    >
+                  <p style={{ fontSize: "1rem", fontWeight: 700, marginBottom: "16px" }}>초기 투자 예산 분석</p>
+                  {(aiResult?.budgetBreakdown ?? []).map((item, i, arr) => (
+                    <div key={item.label} className="flex items-center justify-between py-3" style={{ borderBottom: i < arr.length - 1 ? "1px solid rgba(255,255,255,0.06)" : "none" }}>
                       <div>
                         <p style={{ fontSize: "0.85rem", color: "rgba(255,255,255,0.85)", fontWeight: 500 }}>{item.label}</p>
                         <p style={{ fontSize: "0.7rem", color: "rgba(255,255,255,0.3)", marginTop: "2px" }}>{item.note}</p>
                       </div>
-                      <p style={{ fontSize: "0.9rem", fontWeight: 700, color: "rgba(255,255,255,0.7)" }}>{item.value}</p>
+                      <p style={{ fontSize: "0.9rem", fontWeight: 700, color: "rgba(255,255,255,0.7)" }}>{item.amount}</p>
                     </div>
                   ))}
-
-                  {/* 총 합계 */}
-                  <div
-                    className="rounded-xl mt-4 px-4 py-3 flex items-center justify-between"
-                    style={{ background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.3)" }}
-                  >
-                    <div>
-                      <p style={{ fontSize: "0.75rem", color: "#fbbf24", fontWeight: 600, marginBottom: "2px" }}>총 필요 자본금</p>
-                      <p style={{ fontSize: "0.7rem", color: "rgba(255,255,255,0.3)" }}>보증금 포함 최소 권장 금액</p>
-                    </div>
-                    <p style={{ fontSize: "1.3rem", fontWeight: 800, color: "#fbbf24", letterSpacing: "-0.02em" }}>
-                      {isGangnam
-                        ? bizType.includes("카페") ? "1억 3,000만원" : "1억 1,800만원"
-                        : isSeoul
-                        ? bizType.includes("카페") ? "1억 원" : "8,800만원"
-                        : bizType.includes("카페") ? "8,000만원" : "6,800만원"}
-                    </p>
-                  </div>
                 </div>
               </div>
-
               <div style={{ marginBottom: "24px" }} />
             </>
           )}
 
-          {/* ══ 단계 6: 점포 확보 ══ */}
-          {currentStep === 6 && (() => {
-            const stores = isGangnam
-              ? [
-                  { badge: "추천 1순위", badgeColor: "#10b981", loc: "강남역 대로변", floor: "1층 30평 상가", deposit: "보증금 1억/월 400", key: "권리금 없음 (신축)", keyColor: "#10b981" },
-                  { badge: "가성비", badgeColor: "#3b82f6", loc: "역삼동 이면도로", floor: "1층 22평 상가", deposit: "보증금 5천/월 250", key: "권리금 2천 (시설 포함)", keyColor: "#34d399" },
-                  { badge: "유동인구", badgeColor: "#8b5cf6", loc: "선릉역 메인거리", floor: "2층 35평 상가", deposit: "보증금 8천/월 380", key: "권리금 5천", keyColor: "#f87171" },
-                ]
-              : isSeoul
-              ? [
-                  { badge: "추천 1순위", badgeColor: "#10b981", loc: "홍대 대로변", floor: "1층 25평 상가", deposit: "보증금 5천/월 200", key: "권리금 없음 (신축)", keyColor: "#10b981" },
-                  { badge: "가성비", badgeColor: "#3b82f6", loc: "서신동 이면도로", floor: "1층 18평 상가", deposit: "보증금 2천/월 120", key: "권리금 1천 (시설 포함)", keyColor: "#34d399" },
-                  { badge: "유동인구", badgeColor: "#8b5cf6", loc: "마포 메인거리", floor: "2층 30평 상가", deposit: "보증금 4천/월 200", key: "권리금 3천", keyColor: "#f87171" },
-                ]
-              : [
-                  { badge: "추천 1순위", badgeColor: "#10b981", loc: "서신동 대로변", floor: "1층 25평 상가", deposit: "보증금 3천/월 150", key: "권리금 없음 (신축)", keyColor: "#10b981" },
-                  { badge: "가성비", badgeColor: "#3b82f6", loc: "서신동 이면도로", floor: "1층 18평 상가", deposit: "보증금 2천/월 120", key: "권리금 1천 (시설 포함)", keyColor: "#34d399" },
-                  { badge: "유동인구", badgeColor: "#8b5cf6", loc: "객사 메인거리", floor: "2층 30평 상가", deposit: "보증금 5천/월 250", key: "권리금 3천", keyColor: "#f87171" },
-                ];
-            return (
-              <>
-                <div className="mb-6">
-                  <div
-                    className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full mb-4"
-                    style={{ background: "rgba(16,185,129,0.15)", border: "1px solid rgba(16,185,129,0.3)", fontSize: "0.75rem", fontWeight: 600, color: "#34d399" }}
-                  >
-                    <LayoutGrid style={{ width: "11px", height: "11px" }} /> 현재 단계
-                  </div>
-                  <h2 style={{ fontSize: "clamp(1.5rem, 3vw, 2rem)", fontWeight: 800, letterSpacing: "-0.03em", marginBottom: "6px" }}>점포 확보</h2>
-                  <p style={{ fontSize: "0.9rem", color: "rgba(255,255,255,0.4)" }}>실제 계약할 매장을 찾아요</p>
+          {/* ══ 단계 6: 임대료 추정 ══ */}
+          {currentStep === 6 && (
+            <>
+              <div className="mb-6">
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full mb-4" style={{ background: "rgba(16,185,129,0.15)", border: "1px solid rgba(16,185,129,0.3)", fontSize: "0.75rem", fontWeight: 600, color: "#34d399" }}>
+                  <LayoutGrid style={{ width: "11px", height: "11px" }} /> 현재 단계
                 </div>
+                <h2 style={{ fontSize: "clamp(1.5rem, 3vw, 2rem)", fontWeight: 800, letterSpacing: "-0.03em", marginBottom: "6px" }}>임대료 추정</h2>
+                <p style={{ fontSize: "0.9rem", color: "rgba(255,255,255,0.4)" }}>실제 계약된 부동산 거래 내역을 기반으로 임대료를 추정해요</p>
+              </div>
 
-                <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "16px", padding: "22px", marginBottom: "24px" }}>
-                  <div className="flex items-start justify-between mb-5">
-                    <div>
-                      <p style={{ fontSize: "1rem", fontWeight: 700, marginBottom: "3px" }}>AI 매물 추천 리스트</p>
-                      <p style={{ fontSize: "0.75rem", color: "rgba(255,255,255,0.35)" }}>예산에 맞는 매장을 찾았어요</p>
+              {/* 데이터 출처 배너 */}
+              <div className="flex items-center gap-2 mb-4 px-4 py-2.5 rounded-xl" style={{ background: commercialCtx ? "rgba(16,185,129,0.07)" : "rgba(59,130,246,0.07)", border: commercialCtx ? "1px solid rgba(16,185,129,0.2)" : "1px solid rgba(59,130,246,0.2)" }}>
+                <MapPin style={{ width: "13px", height: "13px", color: commercialCtx ? "#34d399" : "#60a5fa", flexShrink: 0 }} />
+                <p style={{ fontSize: "0.72rem", color: "rgba(255,255,255,0.5)" }}>
+                  {commercialCtx
+                    ? `국토교통부 실거래가 API · ${commercialCtx.latestYearMonth} 기준 · ${commercialCtx.sampleCount}건 분석`
+                    : "지역 시세 기반 AI 추정 (국토교통부 실거래가 데이터 없음)"}
+                </p>
+              </div>
+
+              {aiResult?.rentEstimation ? (
+                <>
+                  {/* 종합 추정 카드 */}
+                  <div style={{ background: "rgba(16,185,129,0.07)", border: "1.5px solid rgba(16,185,129,0.3)", borderRadius: "16px", padding: "20px", marginBottom: "16px" }}>
+                    <p style={{ fontSize: "0.72rem", fontWeight: 700, color: "#34d399", marginBottom: "10px" }}>AI 임대료 종합 추정</p>
+                    <div className="grid grid-cols-2 gap-4 mb-3">
+                      <div>
+                        <p style={{ fontSize: "0.68rem", color: "rgba(255,255,255,0.35)", marginBottom: "4px" }}>보증금 범위</p>
+                        <p style={{ fontSize: "1.1rem", fontWeight: 800, color: "white" }}>{aiResult.rentEstimation.estimatedDeposit}</p>
+                      </div>
+                      <div>
+                        <p style={{ fontSize: "0.68rem", color: "rgba(255,255,255,0.35)", marginBottom: "4px" }}>월 임대료 범위</p>
+                        <p style={{ fontSize: "1.1rem", fontWeight: 800, color: "#34d399" }}>{aiResult.rentEstimation.estimatedMonthlyRent}</p>
+                      </div>
                     </div>
-                    <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: "rgba(59,130,246,0.18)" }}>
-                      <LayoutGrid style={{ width: "15px", height: "15px", color: "#60a5fa" }} />
+                    <p style={{ fontSize: "0.72rem", color: "rgba(255,255,255,0.45)", lineHeight: 1.5 }}>📊 {aiResult.rentEstimation.basis}</p>
+                  </div>
+
+                  {/* 평형별 임대료 테이블 */}
+                  <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "16px", padding: "20px", marginBottom: "16px" }}>
+                    <p style={{ fontSize: "0.88rem", fontWeight: 700, color: "white", marginBottom: "12px" }}>평형별 임대료 추정</p>
+                    <div className="flex flex-col gap-0">
+                      {aiResult.rentEstimation.bySize.map((item, i, arr) => (
+                        <div key={i} className="py-3" style={{ borderBottom: i < arr.length - 1 ? "1px solid rgba(255,255,255,0.06)" : "none" }}>
+                          <div className="grid grid-cols-3 gap-3 mb-1">
+                            <div>
+                              <p style={{ fontSize: "0.65rem", color: "rgba(255,255,255,0.35)", marginBottom: "3px" }}>면적</p>
+                              <p style={{ fontSize: "0.88rem", fontWeight: 700, color: "white" }}>{item.size}</p>
+                            </div>
+                            <div>
+                              <p style={{ fontSize: "0.65rem", color: "rgba(255,255,255,0.35)", marginBottom: "3px" }}>보증금</p>
+                              <p style={{ fontSize: "0.78rem", fontWeight: 600, color: "rgba(255,255,255,0.8)" }}>{item.deposit}</p>
+                            </div>
+                            <div>
+                              <p style={{ fontSize: "0.65rem", color: "rgba(255,255,255,0.35)", marginBottom: "3px" }}>월세</p>
+                              <p style={{ fontSize: "0.78rem", fontWeight: 600, color: "#34d399" }}>{item.monthlyRent}</p>
+                            </div>
+                          </div>
+                          <p style={{ fontSize: "0.68rem", color: "rgba(255,255,255,0.3)" }}>{item.note}</p>
+                        </div>
+                      ))}
                     </div>
                   </div>
 
-                  <div className="grid md:grid-cols-3 gap-3">
-                    {stores.map((store) => (
-                      <div
-                        key={store.badge}
-                        className="rounded-xl p-4 flex flex-col gap-2"
-                        style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}
-                      >
-                        <div className="flex items-center justify-between">
-                          <span
-                            className="px-2 py-0.5 rounded-full"
-                            style={{ fontSize: "0.65rem", fontWeight: 700, background: `${store.badgeColor}25`, color: store.badgeColor }}
-                          >
-                            {store.badge}
-                          </span>
-                          <span style={{ fontSize: "0.7rem", color: "rgba(255,255,255,0.35)" }}>{store.loc}</span>
-                        </div>
-                        <p style={{ fontSize: "1.1rem", fontWeight: 800, color: "white", lineHeight: 1.2 }}>{store.floor}</p>
-                        <p style={{ fontSize: "0.78rem", color: "rgba(255,255,255,0.45)" }}>{store.deposit}</p>
-                        <p style={{ fontSize: "0.78rem", fontWeight: 600, color: store.keyColor }}>{store.key}</p>
-                      </div>
+                  {/* 협상 팁 */}
+                  <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: "16px", padding: "16px 18px", marginBottom: "16px" }}>
+                    <p style={{ fontSize: "0.78rem", fontWeight: 700, color: "#34d399", marginBottom: "10px" }}>💡 임대료 절감·협상 팁</p>
+                    {aiResult.rentEstimation.tips.map((tip, i) => (
+                      <p key={i} className="flex items-start gap-2 mb-2" style={{ fontSize: "0.78rem", color: "rgba(255,255,255,0.6)" }}>
+                        <span style={{ fontWeight: 700, color: "#34d399", flexShrink: 0 }}>{i + 1}.</span>{tip}
+                      </p>
                     ))}
                   </div>
+
+                  {/* 국토교통부 실거래 내역 */}
+                  {commercialCtx && commercialCtx.trades.length > 0 && (
+                    <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: "16px", padding: "18px 20px" }}>
+                      <p style={{ fontSize: "0.82rem", fontWeight: 700, color: "white", marginBottom: "12px" }}>
+                        국토교통부 실거래 내역 ({commercialCtx.latestYearMonth})
+                      </p>
+                      <div className="flex flex-col gap-0">
+                        {commercialCtx.trades.slice(0, 10).map((t, i) => (
+                          <div key={i} className="flex items-start justify-between py-2.5" style={{ borderBottom: i < 9 ? "1px solid rgba(255,255,255,0.05)" : "none" }}>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <p style={{ fontSize: "0.8rem", fontWeight: 600, color: "white", marginBottom: "2px" }}>{t.buildingName || "건물명 미상"}</p>
+                              <p style={{ fontSize: "0.68rem", color: "rgba(255,255,255,0.4)" }}>{t.dong} · {t.floor}층 · {t.area}㎡ · {t.use}</p>
+                            </div>
+                            <span style={{ fontSize: "0.8rem", fontWeight: 700, color: "#34d399", flexShrink: 0, marginLeft: "8px" }}>{t.amount}만원</span>
+                          </div>
+                        ))}
+                      </div>
+                      <p style={{ fontSize: "0.65rem", color: "rgba(255,255,255,0.2)", marginTop: "10px" }}>
+                        평당 평균 거래금액: 약 {commercialCtx.avgAmountPerPyeong.toLocaleString()}만원/평 (총 {commercialCtx.sampleCount}건)
+                      </p>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div style={{ background: "rgba(255,255,255,0.04)", borderRadius: "16px", padding: "40px", textAlign: "center" }}>
+                  <p style={{ color: "rgba(255,255,255,0.25)" }}>AI 분석 결과를 불러오는 중입니다.</p>
                 </div>
-              </>
-            );
-          })()}
+              )}
+            </>
+          )}
 
           {/* ══ 단계 7: 인허가 및 등록 ══ */}
           {currentStep === 7 && (() => {
@@ -706,10 +618,7 @@ function LocationAnalysisSection({ answers, onSwitchToExisting }: { answers: Rec
             return (
               <>
                 <div className="mb-6">
-                  <div
-                    className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full mb-4"
-                    style={{ background: "rgba(16,185,129,0.15)", border: "1px solid rgba(16,185,129,0.3)", fontSize: "0.75rem", fontWeight: 600, color: "#34d399" }}
-                  >
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full mb-4" style={{ background: "rgba(16,185,129,0.15)", border: "1px solid rgba(16,185,129,0.3)", fontSize: "0.75rem", fontWeight: 600, color: "#34d399" }}>
                     <FileText style={{ width: "11px", height: "11px" }} /> 현재 단계
                   </div>
                   <h2 style={{ fontSize: "clamp(1.5rem, 3vw, 2rem)", fontWeight: 800, letterSpacing: "-0.03em", marginBottom: "6px" }}>인허가 및 등록</h2>
@@ -745,11 +654,7 @@ function LocationAnalysisSection({ answers, onSwitchToExisting }: { answers: Rec
                             ? <CheckCircle2 style={{ width: "18px", height: "18px", color: "#10b981", flexShrink: 0 }} />
                             : <Circle style={{ width: "18px", height: "18px", color: "rgba(255,255,255,0.25)", flexShrink: 0 }} />
                           }
-                          <span style={{
-                            fontSize: "0.88rem",
-                            color: done ? "rgba(255,255,255,0.45)" : "rgba(255,255,255,0.85)",
-                            textDecoration: done ? "line-through" : "none",
-                          }}>
+                          <span style={{ fontSize: "0.88rem", color: done ? "rgba(255,255,255,0.45)" : "rgba(255,255,255,0.85)", textDecoration: done ? "line-through" : "none" }}>
                             {item}
                           </span>
                         </button>
@@ -761,45 +666,127 @@ function LocationAnalysisSection({ answers, onSwitchToExisting }: { answers: Rec
             );
           })()}
 
-          {/* ══ 단계 8~9: AI 컨설팅 준비 중 ══ */}
-          {currentStep >= 8 && (() => {
-            const meta: Record<number, { title: string; sub: string; icon: React.ReactNode }> = {
-              8: { title: "인테리어 및 설비", sub: "매장을 멋지게 꾸며요", icon: <Hammer style={{ width: "11px", height: "11px" }} /> },
-              9: { title: "시험 운영 (피드백)", sub: "고객 피드백으로 완성해요", icon: <Rocket style={{ width: "11px", height: "11px" }} /> },
-            };
-            const m = meta[currentStep] ?? meta[8];
+          {/* ══ 단계 8: 인테리어 및 설비 ══ */}
+          {currentStep === 8 && (() => {
+            const plan = aiResult?.interiorPlan;
+            const PRIORITY_COLOR: Record<string, string> = { "필수": "#ef4444", "권장": "#f59e0b", "선택": "#6b7280" };
             return (
               <>
                 <div className="mb-6">
-                  <div
-                    className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full mb-4"
-                    style={{ background: "rgba(16,185,129,0.15)", border: "1px solid rgba(16,185,129,0.3)", fontSize: "0.75rem", fontWeight: 600, color: "#34d399" }}
-                  >
-                    {m.icon} 현재 단계
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full mb-4" style={{ background: "rgba(16,185,129,0.15)", border: "1px solid rgba(16,185,129,0.3)", fontSize: "0.75rem", fontWeight: 600, color: "#34d399" }}>
+                    <Hammer style={{ width: "11px", height: "11px" }} /> 현재 단계
                   </div>
-                  <h2 style={{ fontSize: "clamp(1.5rem, 3vw, 2rem)", fontWeight: 800, letterSpacing: "-0.03em", marginBottom: "6px" }}>{m.title}</h2>
-                  <p style={{ fontSize: "0.9rem", color: "rgba(255,255,255,0.4)" }}>{m.sub}</p>
+                  <h2 style={{ fontSize: "clamp(1.5rem, 3vw, 2rem)", fontWeight: 800, letterSpacing: "-0.03em", marginBottom: "6px" }}>인테리어 및 설비</h2>
+                  <p style={{ fontSize: "0.9rem", color: "rgba(255,255,255,0.4)" }}>매장을 멋지게 꾸며요</p>
                 </div>
 
-                <div
-                  style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "16px", padding: "22px", marginBottom: "24px", minHeight: "200px" }}
-                  className="flex flex-col"
-                >
-                  <div className="flex items-start justify-between mb-2">
-                    <div>
-                      <p style={{ fontSize: "1rem", fontWeight: 700, marginBottom: "3px" }}>AI 컨설팅 진행 중</p>
-                      <p style={{ fontSize: "0.75rem", color: "rgba(255,255,255,0.3)" }}>데이터를 수집하고 있어요</p>
+                {plan ? (
+                  <div className="flex flex-col gap-4 mb-4">
+                    <div style={{ background: "rgba(16,185,129,0.07)", border: "1.5px solid rgba(16,185,129,0.25)", borderRadius: "16px", padding: "20px" }}>
+                      <div className="flex items-center justify-between mb-2">
+                        <div>
+                          <span style={{ fontSize: "0.65rem", fontWeight: 700, color: "#34d399" }}>AI 추천 스타일</span>
+                          <p style={{ fontSize: "1.1rem", fontWeight: 800, color: "white" }}>{plan.style}</p>
+                        </div>
+                        <span style={{ fontSize: "0.8rem", fontWeight: 700, color: "#34d399" }}>{plan.estimatedCost}</span>
+                      </div>
+                      <p style={{ fontSize: "0.78rem", color: "rgba(255,255,255,0.5)" }}>{plan.styleDesc}</p>
                     </div>
-                    <div className="w-8 h-8 rounded-full flex items-center justify-center" style={{ border: "1.5px solid rgba(255,255,255,0.15)" }}>
-                      <Clock style={{ width: "14px", height: "14px", color: "rgba(255,255,255,0.3)" }} />
+
+                    <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "16px", padding: "20px" }}>
+                      <p style={{ fontSize: "0.9rem", fontWeight: 700, color: "white", marginBottom: "14px" }}>설비·비용 항목</p>
+                      <div className="flex flex-col gap-0">
+                        {plan.items.map((item, i) => (
+                          <div key={i} className="flex items-center justify-between py-3" style={{ borderBottom: i < plan.items.length - 1 ? "1px solid rgba(255,255,255,0.06)" : "none" }}>
+                            <div className="flex items-center gap-3">
+                              <span style={{ fontSize: "0.62rem", fontWeight: 700, padding: "2px 7px", borderRadius: "99px", background: `${PRIORITY_COLOR[item.priority]}18`, color: PRIORITY_COLOR[item.priority] }}>{item.priority}</span>
+                              <div>
+                                <p style={{ fontSize: "0.82rem", color: "white", fontWeight: 500 }}>{item.detail}</p>
+                                <p style={{ fontSize: "0.68rem", color: "rgba(255,255,255,0.3)" }}>{item.category}</p>
+                              </div>
+                            </div>
+                            <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "rgba(255,255,255,0.7)" }}>{item.cost}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: "16px", padding: "18px" }}>
+                      <p style={{ fontSize: "0.78rem", fontWeight: 700, color: "#34d399", marginBottom: "10px" }}>💡 AI 절감·차별화 팁</p>
+                      {plan.aiTips.map((tip, i) => (
+                        <p key={i} className="flex items-start gap-2 mb-2" style={{ fontSize: "0.78rem", color: "rgba(255,255,255,0.6)" }}>
+                          <span style={{ fontWeight: 700, color: "#34d399", flexShrink: 0 }}>{i + 1}.</span>{tip}
+                        </p>
+                      ))}
                     </div>
                   </div>
-                  <div className="flex-1 flex items-center justify-center">
-                    <p style={{ fontSize: "0.85rem", color: "rgba(255,255,255,0.25)", textAlign: "center" }}>
-                      해당 단계에 맞는 리포트가 준비중입니다.
-                    </p>
+                ) : (
+                  <div style={{ background: "rgba(255,255,255,0.04)", borderRadius: "16px", padding: "40px", textAlign: "center" }}>
+                    <p style={{ color: "rgba(255,255,255,0.25)" }}>AI 분석 결과를 불러오는 중입니다.</p>
                   </div>
+                )}
+              </>
+            );
+          })()}
+
+          {/* ══ 단계 9: 시험 운영 ══ */}
+          {currentStep === 9 && (() => {
+            const plan = aiResult?.trialRunPlan;
+            return (
+              <>
+                <div className="mb-6">
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full mb-4" style={{ background: "rgba(16,185,129,0.15)", border: "1px solid rgba(16,185,129,0.3)", fontSize: "0.75rem", fontWeight: 600, color: "#34d399" }}>
+                    <Rocket style={{ width: "11px", height: "11px" }} /> 현재 단계
+                  </div>
+                  <h2 style={{ fontSize: "clamp(1.5rem, 3vw, 2rem)", fontWeight: 800, letterSpacing: "-0.03em", marginBottom: "6px" }}>시험 운영 (피드백)</h2>
+                  <p style={{ fontSize: "0.9rem", color: "rgba(255,255,255,0.4)" }}>고객 피드백으로 완성해요</p>
                 </div>
+
+                {plan ? (
+                  <div className="flex flex-col gap-4 mb-4">
+                    {plan.phases.map((phase, i) => (
+                      <div key={i} style={{ background: i === 0 ? "rgba(16,185,129,0.07)" : "rgba(255,255,255,0.04)", border: i === 0 ? "1.5px solid rgba(16,185,129,0.25)" : "1px solid rgba(255,255,255,0.08)", borderRadius: "16px", padding: "20px" }}>
+                        <div className="flex items-center gap-2 mb-3">
+                          <div style={{ width: "24px", height: "24px", borderRadius: "50%", background: "rgba(16,185,129,0.15)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.72rem", fontWeight: 800, color: "#34d399", flexShrink: 0 }}>{i + 1}</div>
+                          <div>
+                            <span style={{ fontSize: "0.65rem", color: "#34d399", fontWeight: 700 }}>{phase.period}</span>
+                            <p style={{ fontSize: "0.9rem", fontWeight: 800, color: "white" }}>{phase.name}</p>
+                          </div>
+                        </div>
+                        <div className="grid sm:grid-cols-2 gap-3">
+                          <div>
+                            <p style={{ fontSize: "0.7rem", fontWeight: 700, color: "rgba(255,255,255,0.35)", marginBottom: "6px" }}>목표</p>
+                            {phase.goals.map((g, j) => <p key={j} className="flex items-start gap-1.5 mb-1" style={{ fontSize: "0.75rem", color: "rgba(255,255,255,0.65)" }}><span style={{ marginTop: "5px", width: "4px", height: "4px", borderRadius: "50%", background: "#10b981", flexShrink: 0 }} />{g}</p>)}
+                          </div>
+                          <div>
+                            <p style={{ fontSize: "0.7rem", fontWeight: 700, color: "rgba(255,255,255,0.35)", marginBottom: "6px" }}>KPI 목표치</p>
+                            {phase.kpis.map((k, j) => (
+                              <div key={j} className="flex items-center justify-between mb-1.5" style={{ background: "rgba(255,255,255,0.04)", borderRadius: "8px", padding: "5px 10px" }}>
+                                <span style={{ fontSize: "0.72rem", color: "rgba(255,255,255,0.5)" }}>{k.metric}</span>
+                                <span style={{ fontSize: "0.72rem", fontWeight: 700, color: "#34d399" }}>{k.target}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+
+                    <div className="grid sm:grid-cols-2 gap-4">
+                      <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "16px", padding: "18px" }}>
+                        <p style={{ fontSize: "0.82rem", fontWeight: 700, color: "white", marginBottom: "10px" }}>📣 피드백 수집 채널</p>
+                        {plan.feedbackChannels.map((ch, i) => <p key={i} className="flex items-start gap-2 mb-2" style={{ fontSize: "0.78rem", color: "rgba(255,255,255,0.6)" }}><span style={{ fontWeight: 700, color: "#34d399" }}>·</span>{ch}</p>)}
+                      </div>
+                      <div style={{ background: "rgba(249,115,22,0.06)", border: "1px solid rgba(249,115,22,0.2)", borderRadius: "16px", padding: "18px" }}>
+                        <p style={{ fontSize: "0.82rem", fontWeight: 700, color: "#f97316", marginBottom: "10px" }}>⚠ 철수·재검토 경고 신호</p>
+                        {plan.warningSignals.map((w, i) => <p key={i} className="flex items-start gap-2 mb-2" style={{ fontSize: "0.78rem", color: "rgba(255,255,255,0.6)" }}><span style={{ fontWeight: 700, color: "#f97316" }}>{i + 1}.</span>{w}</p>)}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ background: "rgba(255,255,255,0.04)", borderRadius: "16px", padding: "40px", textAlign: "center" }}>
+                    <p style={{ color: "rgba(255,255,255,0.25)" }}>AI 분석 결과를 불러오는 중입니다.</p>
+                  </div>
+                )}
               </>
             );
           })()}
@@ -827,8 +814,7 @@ function LocationAnalysisSection({ answers, onSwitchToExisting }: { answers: Rec
               className="flex items-center gap-2 px-6 h-12 rounded-2xl transition-all active:scale-[0.98]"
               style={{
                 background: "linear-gradient(135deg,#10b981,#34d399)",
-                color: "white",
-                fontSize: "0.92rem", fontWeight: 700,
+                color: "white", fontSize: "0.92rem", fontWeight: 700,
                 border: "none", cursor: "pointer",
                 boxShadow: "0 6px 24px rgba(16,185,129,0.35)",
               }}
@@ -860,7 +846,6 @@ function LocationAnalysisSection({ answers, onSwitchToExisting }: { answers: Rec
             }}
             onClick={(e) => e.stopPropagation()}
           >
-            {/* 아이콘 */}
             <div
               className="flex items-center justify-center mb-6"
               style={{ width: "72px", height: "72px", borderRadius: "50%", background: "rgba(16,185,129,0.15)", border: "1px solid rgba(16,185,129,0.3)" }}

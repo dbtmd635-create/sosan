@@ -4,6 +4,8 @@ import { Store, ChevronLeft, Sparkles, TrendingUp, Megaphone, Users, Star, Badge
 import { NewResultReport } from "./NewResultReport";
 import { ExistingResultReport } from "./ExistingResultReport";
 import { DetailedStartupQuestionnaire } from "./DetailedStartupQuestionnaire";
+import { analyzeStartup, type AiAnalysisResult } from "../utils/openai";
+import { fetchSbizStores, fetchCommercialContext, type SbizStoreData, type CommercialContext } from "../utils/budongsan";
 
 /* ─────────────────────────────────────────
    데이터 정의
@@ -1059,6 +1061,10 @@ export function AIAnalysisPage() {
     const [posMetrics, setPosMetrics] = useState<PosMetrics>(INITIAL_POS_METRICS);
     const [posInputError, setPosInputError] = useState("");
     const [csvError, setCsvError] = useState("");
+    const [aiResult, setAiResult] = useState<AiAnalysisResult | null>(null);
+    const [aiError, setAiError] = useState(false);
+    const [sbizData, setSbizData] = useState<SbizStoreData | null>(null);
+    const [commercialCtx, setCommercialCtx] = useState<CommercialContext | null>(null);
 
     const deepDataFields = useMemo(() => {
         const map = new Map<keyof PosMetrics, { key: keyof PosMetrics; label: string }>();
@@ -1112,10 +1118,36 @@ export function AIAnalysisPage() {
 
     /* 자동 로딩 → 결과 전환 */
     useEffect(() => {
-        if (flow === "loading") {
-            const t = setTimeout(() => setFlow("result"), 2800);
-            return () => clearTimeout(t);
-        }
+        if (flow !== "loading") return;
+
+        let cancelled = false;
+
+        const minDelay = new Promise<void>(res => setTimeout(res, 2800));
+
+        const regionText = (answers["region"] as string) || "";
+        const bizType    = (answers["bizType"]  as string) || "";
+
+        const apiCall = userType === "new"
+            ? (async () => {
+                const [sbiz, commercial] = await Promise.all([
+                    fetchSbizStores(regionText, bizType).catch(() => null),
+                    fetchCommercialContext(regionText).catch(() => null),
+                ]);
+                if (!cancelled) {
+                    if (sbiz) setSbizData(sbiz);
+                    if (commercial) setCommercialCtx(commercial);
+                }
+                await analyzeStartup(answers, sbiz, commercial)
+                    .then(r => { if (!cancelled) setAiResult(r); })
+                    .catch(() => { if (!cancelled) setAiError(true); });
+              })()
+            : Promise.resolve();
+
+        Promise.all([minDelay, apiCall]).then(() => {
+            if (!cancelled) setFlow("result");
+        });
+
+        return () => { cancelled = true; };
     }, [flow]);
 
     const ans = (key: string): string => (answers[key] as string) || "";
@@ -1279,6 +1311,8 @@ export function AIAnalysisPage() {
         resetAnswers();
         setUserType("new");
         setAnalysisMode("light");
+        setAiResult(null);
+        setAiError(false);
         setFlow("typeSelect");
     };
     const handleSwitchToExisting = () => {
@@ -1293,7 +1327,7 @@ export function AIAnalysisPage() {
             />
         );
     if (flow === "result")
-        return <NewResultReport answers={answers} onReset={handleReset} onSwitchToExisting={handleSwitchToExisting} />;
+        return <NewResultReport answers={answers} aiResult={aiResult} aiError={aiError} sbizData={sbizData} commercialCtx={commercialCtx} onReset={handleReset} onSwitchToExisting={handleSwitchToExisting} />;
 
     /* ── 창업 전 주의사항 (신생 창업자 진입) ── */
     if (flow === "warningNew") return (
